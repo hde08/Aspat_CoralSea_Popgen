@@ -8,7 +8,20 @@ cd /data1/WGS_Aspat_GBR
 INDIR="/data1/WGS_Aspat_GBR/Aligned_files/"
 OUTDIR="/home/hugo/PhD/Genomics/Raw_data_processing/BAM_statistics/"
 
-FILES=($(ls -1 ${INDIR}*UNDEDUP_RG.bam))
+FILES=($INDIR*UNDEDUP_RG.bam)
+
+#Loop across files 
+for FILE in "${FILES[@]}"; do
+    BASE=$(basename $FILE)
+    BASE=${BASE%%_U*} 
+    echo ${BASE} >> ${OUTDIR}/sample_name.txt		# generate sample names
+    samtools view -c --threads 25 "${INDIR}${BASE}_MARKED_DUP.bam" >> ${OUTDIR}allCounts.txt		# generate read counts
+    samtools view -b -f 12 -F 256 --threads 25 "${INDIR}${BASE}_MARKED_DUP.bam" > "${INDIR}${BASE}.unmapped.bam"		# generate bam with unmapped reads = symbiont, microbes and other reads 
+    samtools view -c --threads 25 "${INDIR}${BASE}.unmapped.bam" >> "${OUTDIR}unmappedCounts.txt"		# generate unmapped read counts
+	
+done
+
+
 BASE=$(basename ${FILES[0]})
 BASE=${BASE%%_U*} 
 
