@@ -44,10 +44,3 @@ for REF in ${REFS[@]}; do
 done
 end=`date +%s`
 echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-
-start=`date +%s`
-for FILE in "${FILES[@]}"; do
-    BASE=$(basename $FILE)
-done
-end=`date +%s`
-echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
