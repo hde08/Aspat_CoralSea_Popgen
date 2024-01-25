@@ -12,15 +12,22 @@ OUTDIR="/home/hugo/PhD/Genomics/Raw_data_processing/BAM_statistics/"
 FILES=($INDIR*MARKED_DUP.bam)
 
 #Loop across files 
+
+start=`date +%s`
 for FILE in "${FILES[@]}"; do
     BASE=$(basename $FILE)
     BASE=${BASE%%_M*} 
-    echo ${BASE} >> ${OUTDIR}/sample_name.txt		# generate sample names
-    samtools view -c --threads 25 "${INDIR}${BASE}_MARKED_DUP.bam" >> ${OUTDIR}allCounts.txt		# generate read counts
-    samtools view -b -f 12 -F 256 --threads 25 "${INDIR}${BASE}_MARKED_DUP.bam" > "${INDIR}${BASE}.unmapped.bam"		# generate bam with unmapped reads = symbiont, microbes and other reads 
-    samtools view -c --threads 25 "${INDIR}${BASE}.unmapped.bam" >> "${OUTDIR}unmappedCounts.txt"		# generate unmapped read counts
-	
+    # generate sample names
+    echo ${BASE} >> ${OUTDIR}/sample_name.txt		
+    # generate read counts
+    samtools view -c --threads 25 "${INDIR}${BASE}_MARKED_DUP.bam" >> ${OUTDIR}allCounts.txt		
+    # generate bam with unmapped reads = symbiont, microbes and other reads 
+    samtools view -b -f 12 -F 256 --threads 25 "${INDIR}${BASE}_MARKED_DUP.bam" > "${INDIR}${BASE}.unmapped.bam"
+    # generate unmapped read counts
+    samtools view -c --threads 25 "${INDIR}${BASE}.unmapped.bam" >> "${OUTDIR}unmappedCounts.txt"		
 done
+end=`date +%s`
+echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
 # Notes:
 # -f 4: extract all unmapped reads

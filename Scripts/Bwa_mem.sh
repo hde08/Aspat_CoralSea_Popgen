@@ -4,7 +4,7 @@
 #### 4. Map to reference genome using Bwa mem (version 0.7.17-r1188) with default parameters
 
 cd /data1/WGS_Aspat_GBR/
-mkdir Aligned_files/
+#mkdir Aligned_files/
 INDIR="/data1/WGS_Aspat_GBR/Trimmed_files/"
 OUTDIR="/data1/WGS_Aspat_GBR/Aligned_files/"
 

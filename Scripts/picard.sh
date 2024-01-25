@@ -22,10 +22,11 @@ done
 
 #5.1 Add read group information (parallel mode)
 start=`date +%s`
-cat /home/hugo/PhD/Genomics/Raw_data_processing/aln_ids.txt | parallel --jobs 25 "home/gael/Programmes/gatk-4.3.0.0/gatk AddOrReplaceReadGroups INPUT="${INDIR}{}_UNDEDUP.bam" OUTPUT="${INDIR}{}_UNDEDUP_RG.bam" RGID=\$(echo {} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/") RGLB=\$(echo {} | cut -d"-" -f1,2,3) RGPL=ILLUMINA RGPU=\$(echo {} | cut -d"_" -f2) RGSM=\$(echo {} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/")"
+cat /home/hugo/PhD/Genomics/Raw_data_processing/aln_ids.txt | parallel --jobs 25 "/home/gael/Programmes/gatk-4.3.0.0/gatk AddOrReplaceReadGroups INPUT="${INDIR}{}_UNDEDUP.bam" OUTPUT="${INDIR}{}_UNDEDUP_RG.bam" RGID=\$(echo {} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/") RGLB=\$(echo {} | cut -d"-" -f1,2,3) RGPL=ILLUMINA RGPU=\$(echo {} | cut -d"_" -f2) RGSM=\$(echo {} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/")"
 end=`date +%s`
 echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
+/home/gael/Programmes/gatk-4.3.0.0/gatk
 
 #RGID : unique read group identifier
 #RGLB : library index
