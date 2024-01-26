@@ -11,7 +11,7 @@
 
 ## Analyses scripts > Post fastq processing scripts .
 
-1 BAM_statistics.rmd > Create diagnostic plots of mapped BAM files statistics.  
+1 BAM_statistics.Rmd > Create diagnostic plots of mapped BAM files statistics.  
 
 
 
