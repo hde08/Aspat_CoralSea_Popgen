@@ -1,0 +1,49 @@
+---
+title: "BAM_file_statistics"
+author: "Hugo DENIS"
+date: "2024-01-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Packages
+```{r}
+library(xlsx)
+library(dplyr)
+```
+
+#### This scripts uses mapped BAM files to produce basic statistics on A.spathulata WGS data ####   
+# This includes coverage, base quality, sequencing depth, mapping quality ...
+
+#Load samples metadata (A.spathulata 2022 only)
+```{r}
+meta=read.csv('/home/hugo/PhD/GBR_Data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
+```
+
+#Load BAM stats files  
+```{r}
+path='/home/hugo/PhD/Genomics/Raw_data_processing/BAM_statistics/'
+
+#Sample names and read counts
+df_stat=data.frame(sample.name=read.table(paste0(path,'sample_name.txt'))[1],mapped=read.table(paste0(path,'allCounts.txt'))[1],unmapped=read.table(paste0(path,'unmappedCounts.txt'))[1])
+colnames(df_stat)=c('sample.name','mapped','unmapped')
+df_stat$individualID=paste0(sapply(strsplit(df_stat$sample.name,"-"),"[[",4),"_",sub("_.*", "",sub(".*-","",df_stat$sample.name)))
+df_stat=df_stat %>% merge(meta[,c("individualID","locationID")],by="individualID")
+
+#Duplicate stats
+dup_stat=list.files(path,"*dup_metrics.txt",full.names = T) %>% lapply(function(x)read.table(x,skip=6,nrows=1,header=T) %>% mutate(sample.name=sub("_marked.*", "",basename(x)))) %>% bind_rows
+
+#Coverage 
+cov_stat=list.files(path,"*coverage.txt",full.names = T) %>% lapply(function(x)read.table(x,header=T,comment.char="",col.names=c('rname',"startpos","endpos","numreads","covbases","coverage","meandepth","meanbaseq","meanmapq")) %>% mutate(sample.name=sub("-coverage.*", "",basename(x)))) %>% bind_rows
+
+#flagstats
+flag_stat=list.files(path,"*flagstats.txt",full.names = T) %>% lapply(function(x)read.table(x,header=F,sep="\t",col.names=c('value',NA,'metric'))[,c(1,3)]  %>% mutate(sample.name=sub("-flag.*", "",basename(x)))) %>% bind_rows
+
+#Mapped sequence lenght  
+index_stat=list.files(path,"*index_stats.txt",full.names = T) %>% lapply(function(x)read.table(x,col.names=c('Ref_name','Seq_length','Mapped_segment','Unmapped_segment')) %>% mutate(sample.name=sub("-index.*", "",basename(x)))) %>% bind_rows
+```
+
+#Check  
