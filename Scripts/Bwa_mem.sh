@@ -20,7 +20,7 @@ REFS=(${REF_1} ${REF_2})
 
 #List files 
 FILES=($INDIR/*_R1_paired.fastq.gz)
-FILES=("${FILES[@]:0:20}")
+FILES=("${FILES[@]:29:20}")
 
 
 start=`date +%s`

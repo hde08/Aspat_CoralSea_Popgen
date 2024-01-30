@@ -1,6 +1,10 @@
 #!/bin/bash
 '''chmod u+x /home/hugo/PhD/Genomics/Scripts/picard.sh '''
 
+#On ENTROPE cluster load correct java version to execute gatk
+''' ml load gcc-11.4.1/jdk/17.0.2_openjdk-rplh5ry'''
+
+
 #5. Mark and delete PCR duplicates using picard version 2.27.5 
 
 #Recommanded to generate before after quality plot to check base recalibration 

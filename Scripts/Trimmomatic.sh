@@ -1,8 +1,9 @@
 #!/bin/bash
+'''chmod u+x /home/hugo/PhD/Genomics/Scripts/Trimmomatic.sh '''
 
 #### 2. Quality trimming and adapter removal using Trimmomatic v0.39
-mkdir /data1/WGS_Aspat_GBR/Trimmed_files
-mkdir Postqfilt_quality_check/
+#mkdir /data1/WGS_Aspat_GBR/Trimmed_files
+#mkdir Postqfilt_quality_check/
 
 cd /home/hugo/PhD/Genomics/Raw_data_processing/
 INDIR="/data1/WGS_Aspat_GBR/230404-A00151A_L001/"
@@ -12,7 +13,7 @@ OUTDIR="/data1/WGS_Aspat_GBR/Trimmed_files/"
 FILES=($INDIR/*_1.fq.gz)
 
 #Test scripts on a subset of 10 files 
-FILES=("${FILES[@]:20:10}")
+FILES=("${FILES[@]:160:20}")
 
 #Save file IDs in file 
 >/home/hugo/PhD/Genomics/Raw_data_processing/ids.txt
@@ -25,20 +26,20 @@ done
 
 #Run Trimmomatic in parallel mode : assign each file to 1 CPU -> seems to work better than providing files one by one with -threads N argument
 start=`date +%s`
-cat /home/hugo/PhD/Genomics/Raw_data_processing/ids.txt | parallel --jobs 10 "java -jar /home/gael/Programmes/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -trimlog "${OUTDIR}{}_trim.log" -summary "${OUTDIR}{}_sum.txt" "${INDIR}{}_1.fq.gz" "${INDIR}{}_2.fq.gz" "${OUTDIR}{}_R1_paired.fastq.gz" "${OUTDIR}{}_R1_unpaired.fastq.gz" "${OUTDIR}{}_R2_paired.fastq.gz" "${OUTDIR}{}_R2_unpaired.fastq.gz" ILLUMINACLIP:/home/hugo/PhD/Genomics/Raw_data_processing/Illumina_adapters_Iva_version.fa:2:30:10:2 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50"
+cat /home/hugo/PhD/Genomics/Raw_data_processing/ids.txt | parallel --jobs 25 "java -jar /home/gael/Programmes/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -trimlog "${OUTDIR}{}_trim.log" -summary "${OUTDIR}{}_sum.txt" "${INDIR}{}_1.fq.gz" "${INDIR}{}_2.fq.gz" "${OUTDIR}{}_R1_paired.fastq.gz" "${OUTDIR}{}_R1_unpaired.fastq.gz" "${OUTDIR}{}_R2_paired.fastq.gz" "${OUTDIR}{}_R2_unpaired.fastq.gz" ILLUMINACLIP:/home/hugo/PhD/Genomics/Raw_data_processing/Illumina_adapters_Iva_version.fa:2:30:10:2 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50"
 end=`date +%s`
 echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
 
 #Run Trimmmomatic across files in for loop
-start=`date +%s`
+'''start=`date +%s`
 for FILE in ${FILES[@]}; do
 	BASE=$(basename $FILE)
 	BASE=${BASE%%_1*} 
 	java -jar /home/gael/Programmes/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 25 -phred33 -trimlog "${OUTDIR}${BASE}_trim.log" -summary "${OUTDIR}${BASE}_sum.txt" "${INDIR}${BASE}_1.fq.gz" "${INDIR}${BASE}_2.fq.gz" "${OUTDIR}${BASE}_R1_paired.fastq.gz" "${OUTDIR}${BASE}_R1_unpaired.fastq.gz" "${OUTDIR}${BASE}_R2_paired.fastq.gz" "${OUTDIR}${BASE}_R2_unpaired.fastq.gz" ILLUMINACLIP:/home/hugo/PhD/Genomics/Raw_data_processing/Illumina_adapters_Iva_version.fa:2:30:10:2 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50
 done
 end=`date +%s`
-echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
+echo Execution time was `expr $(( ($end - $start) / 60))` minutes.'''
 
 
 # Keep bases with phred-score quality > 20 in sliding window of 4 bp (average)
