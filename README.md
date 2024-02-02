@@ -9,6 +9,10 @@
 5 Extract_bam_unmapped.sh > Extract unmapped reads in different bam file.  
 6 BAM_statistics.sh > Generate statistics on raw sequence, quality, mapping, coverage etc. 
 
+### Personal scripts
+
+7 ANGSD.sh > SNP, genotype calling and ANGSD analyses  
+
 ## Analyses scripts > Post fastq processing scripts .
 
 1 BAM_statistics.Rmd > Create diagnostic plots of mapped BAM files statistics.  
