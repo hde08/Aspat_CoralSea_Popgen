@@ -38,9 +38,8 @@ df_trim=df_trim %>% merge(meta[,c("individualID","locationID")],by="individualID
 df_stat=data.frame(sample.name=read.table(paste0(path,'sample_name.txt'))[1],mapped=read.table(paste0(path,'allCounts.txt'))[1],unmapped=read.table(paste0(path,'unmappedCounts.txt'))[1])
 colnames(df_stat)=c('sample.name','mapped','unmapped')
 df_stat$individualID=paste0(sapply(strsplit(df_stat$sample.name,"-"),"[[",4),"_",sub("_.*", "",sub(".*-","",df_stat$sample.name)))
-df_stat=df_stat %>% merge(meta[,c("individualID","locationID")],by="individualID")
+df_stat=df_stat %>% merge(meta[,c("individualID","locationID")],by="individualID",all.x=T)
 df_stat=df_stat %>% mutate(Ref=sub(".*_", "",sample.name))
-df_stat=df_stat[-c(1,2,3),]
 
 #Duplicate stats
 dup_stat=list.files(path,"*dup_metrics.txt",full.names = T) %>% lapply(function(x)read.table(x,skip=6,nrows=1,header=T) %>% mutate(sample.name=sub("_marked.*", "",basename(x)))) %>% bind_rows
@@ -51,6 +50,7 @@ dup_stat=dup_stat %>% mutate(Ref=sub(".*_", "",sample.name))
 cov_stat=list.files(path,"*coverage.txt",full.names = T) %>% lapply(function(x)read.table(x,header=T,comment.char="",col.names=c('rname',"startpos","endpos","numreads","covbases","coverage","meandepth","meanbaseq","meanmapq")) %>% mutate(sample.name=sub("-coverage.*", "",basename(x)))) %>% bind_rows
 cov_stat$individualID=paste0(sapply(strsplit(cov_stat$sample.name,"-"),"[[",4),"_",sub("_.*", "",sub(".*-","",cov_stat$sample.name)))
 cov_stat=cov_stat %>% mutate(Ref=sub(".*_", "",sample.name))
+cov_stat=cov_stat %>% merge(meta[,c("individualID","locationID")],by="individualID",all.x=T)
 
 cov_sum=cov_stat %>% group_by(Ref,individualID) %>% dplyr::summarize(meancov=mean(coverage),sdcov=sd(coverage),meandep=mean(meandepth),sddep=sd(meandepth),meanbq=mean(meanbaseq),sdbq=sd(meanbaseq),meanmq=mean(meanmapq),sdmq=sd(meanmapq))
 
@@ -61,7 +61,7 @@ flag_stat=list.files(path,"*flagstats.txt",full.names = T) %>% lapply(function(x
 index_stat=list.files(path,"*index_stats.txt",full.names = T) %>% lapply(function(x)read.table(x,col.names=c('Ref_name','Seq_length','Mapped_segment','Unmapped_segment')) %>% mutate(sample.name=sub("-index.*", "",basename(x)))) %>% bind_rows
 ```
 
-#Make statistics plot 
+#Make global statistics plot 
 ```{r}
 #Percentage of paired reads after trimming with trimmomatic
 trim_plot=df_trim %>% subset(Var=="Both Surviving Read Percent")  %>% ggplot(aes(x=individualID,y=100-Value,fill=locationID)) + geom_col(colour='black',position='dodge2') + theme_classic() + labs(x='Sample',y='% Paired reads dropped after trimming') + theme(axis.text.x = element_text(angle=45,vjust = 1, hjust = 1))
@@ -75,7 +75,7 @@ dup_plot=dup_stat %>% ggplot(aes(x=individualID,y=PERCENT_DUPLICATION,fill=Ref))
 #Coverage
 cov_plot=cov_sum %>% ggplot(aes(x=individualID,y=meancov,fill=Ref))   + geom_col(colour='black',position='dodge2') +
   geom_errorbar(aes(ymin=meancov-sdcov, ymax=meancov+sdcov), width=.2,
-                 position=position_dodge(.9))+ theme_classic() + labs(x='Sample',y='Coverage all reference ',fill='Ref genome') + theme(axis.text.x = element_text(angle=45,vjust = 1, hjust = 1))
+                 position=position_dodge(.9))+ theme_classic() + labs(x='Sample',y='% Coverage all reference ',fill='Ref genome') + theme(axis.text.x = element_text(angle=45,vjust = 1, hjust = 1))
 
 #Depth
 depth_plot=cov_sum %>% ggplot(aes(x=individualID,y=meandep,fill=Ref))   + geom_col(colour='black',position='dodge2')+ theme_classic() + labs(x='Sample',y='Average depth across refernce chr/contigs',fill='Ref genome') + theme(axis.text.x = element_text(angle=45,vjust = 1, hjust = 1))
@@ -85,16 +85,36 @@ mapq_plot=cov_sum %>% ggplot(aes(x=individualID,y=meanmq,fill=Ref))   + geom_col
 
 baseq_plot=cov_sum %>% subset(!duplicated(individualID)) %>% ggplot(aes(x=meanbq))   + geom_histogram(colour='black',binwidth = 0.2,fill="white")+ theme_classic() + labs(x='Base quality',y=' N samples') + theme(axis.text.x = element_text(angle=45,vjust = 1, hjust = 1)) + xlim(10,40)
 
+x11()
+plot(cov_plot)
 ```
+
+#Check into details coverage and depth across reference 
+```{r}
+#MEan coverage for eachr eference across samples 
+amil_cov=cov_stat %>% subset(Ref=="Amillepora") %>% group_by(rname) %>% dplyr::summarise(meancov=mean(coverage)) %>% mutate(Ref_type=if_else(str_detect(rname,"CM"),"Chromosome","Contig")) %>% ggplot(aes(x=rname,y=meancov,fill=Ref_type,colour=Ref_type))   + geom_col()+ theme_classic() + labs(x='Reference contig / chr',y='Mean coverage across samples',fill="Reference type") + theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(color=FALSE)
+
+aspat_cov=cov_stat %>% subset(Ref=="Aspathulata") %>% group_by(rname) %>% dplyr::summarise(meancov=mean(coverage)) %>% mutate(Ref_type=if_else(str_detect(rname,"CM"),"Chromosome","Contig")) %>% ggplot(aes(x=rname,y=meancov,fill=Ref_type,colour=Ref_type))   + geom_col()+ theme_classic() + labs(x='Reference contig / chr',y='Mean coverage across samples',fill="Reference type") + theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(color=FALSE)
+
+#Link between size of reference genome and coverage
+l_plot=cov_stat %>% group_by(Ref,rname) %>% dplyr::summarise(meancov=mean(coverage)) %>% merge(index_stat %>% distinct(Ref_name,.keep_all = T),by.x="rname",by.y="Ref_name") %>% ggplot(aes(x=Seq_length,y=meancov,color=Ref))   + geom_point(size=2)+ theme_classic() + labs(x='log10(Reference length)',y='Mean coverage across samples',color="Reference") + scale_x_continuous(trans='log10')
+
+```
+
 
 #Save plots 
 ```{r}
-ggsave(trim_plot,filename=paste0("/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/","Trimming",".png"),width=14,height=10,dpi=320)
-ggsave(map_plot,filename=paste0("/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/","Map_perc",".png"),width=14,height=10,dpi=320)
-ggsave(dup_plot,filename=paste0("/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/","Perc_dup",".png"),width=14,height=10,dpi=320)
-ggsave(cov_plot,filename=paste0("/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/","Coverage",".png"),width=14,height=10,dpi=320)
-ggsave(depth_plot,filename=paste0("/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/","Depth",".png"),width=14,height=10,dpi=320)
-ggsave(mapq_plot,filename=paste0("/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/","Map_q",".png"),width=14,height=10,dpi=320)
-ggsave(baseq_plot,filename=paste0("/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/","Base_q",".png"),width=14,height=10,dpi=320)
+path_save="/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/"
+
+ggsave(trim_plot,filename=paste0(path_save,"Trimming",".png"),width=14,height=10,dpi=320)
+ggsave(map_plot,filename=paste0(path_save,"Map_perc",".png"),width=14,height=10,dpi=320)
+ggsave(dup_plot,filename=paste0(path_save,"Perc_dup",".png"),width=14,height=10,dpi=320)
+ggsave(cov_plot,filename=paste0(path_save,"Coverage",".png"),width=14,height=10,dpi=320)
+ggsave(depth_plot,filename=paste0(path_save,"Depth",".png"),width=14,height=10,dpi=320)
+ggsave(mapq_plot,filename=paste0(path_save,"Map_q",".png"),width=14,height=10,dpi=320)
+ggsave(baseq_plot,filename=paste0(path_save,"Base_q",".png"),width=14,height=10,dpi=320)
+ggsave(amil_cov,filename=paste0(path_save,"Amillepora_coverage",".png"),width=14,height=10,dpi=320)
+ggsave(aspat_cov,filename=paste0(path_save,"Aspathulata_coverage",".png"),width=14,height=10,dpi=320)
+ggsave(l_plot,filename=paste0(path_save,"Ref_coverage~length ",".png"),width=14,height=10,dpi=320)
 ```
 
