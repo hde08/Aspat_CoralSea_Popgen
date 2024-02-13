@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 #Packages
 ```{r}
-library(xlsx)
+library(openxlsx)
 library(dplyr)
 library(ggplot2)
 library(stringr)
@@ -22,15 +22,17 @@ library(stringr)
 
 #Load samples metadata (A.spathulata 2022 only)
 ```{r}
-meta=read.csv('/home/hugo/PhD/GBR_Data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
+meta=read.csv('/home/hdenis/Data/GBR_data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
 ```
 
 #Load BAM stats files  
 ```{r}
-path='/home/hugo/PhD/Genomics/Raw_data_processing/BAM_statistics/'
+path='/nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/BAM_statistics/'
+
+
 
 #Trimmed statistics -> problem with disk 
-df_trim=list.files("/data1/WGS_Aspat_GBR/Trimmed_files/","*sum.txt",full.names = T) %>% lapply(function(x)read.table(x,sep=":",col.names=c("Var","Value")) %>% mutate(sample.name=sub("_sum.*", "",basename(x)))) %>% bind_rows %>% mutate(Value=as.numeric(str_remove(str_replace(Value,",",".")," ")))
+df_trim=list.files("/nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/","*sum.txt",full.names = T) %>% lapply(function(x)read.table(x,sep=":",col.names=c("Var","Value")) %>% mutate(sample.name=sub("_sum.*", "",basename(x)))) %>% bind_rows %>% mutate(Value=as.numeric(str_remove(str_replace(Value,",",".")," ")))
 df_trim$individualID=paste0(sapply(strsplit(df_trim$sample.name,"-"),"[[",4),"_",sub("_.*", "",sub(".*-","",df_trim$sample.name)))
 df_trim=df_trim %>% merge(meta[,c("individualID","locationID")],by="individualID")
 
@@ -85,8 +87,6 @@ mapq_plot=cov_sum %>% ggplot(aes(x=individualID,y=meanmq,fill=Ref))   + geom_col
 
 baseq_plot=cov_sum %>% subset(!duplicated(individualID)) %>% ggplot(aes(x=meanbq))   + geom_histogram(colour='black',binwidth = 0.2,fill="white")+ theme_classic() + labs(x='Base quality',y=' N samples') + theme(axis.text.x = element_text(angle=45,vjust = 1, hjust = 1)) + xlim(10,40)
 
-x11()
-plot(cov_plot)
 ```
 
 #Check into details coverage and depth across reference 
@@ -104,7 +104,8 @@ l_plot=cov_stat %>% group_by(Ref,rname) %>% dplyr::summarise(meancov=mean(covera
 
 #Save plots 
 ```{r}
-path_save="/home/hugo/PhD/Genomics/Figures/Diagnostic_plot_fasq_to_variant/"
+path_save="/home/hdenis/Figures/"
+
 
 ggsave(trim_plot,filename=paste0(path_save,"Trimming",".png"),width=14,height=10,dpi=320)
 ggsave(map_plot,filename=paste0(path_save,"Map_perc",".png"),width=14,height=10,dpi=320)

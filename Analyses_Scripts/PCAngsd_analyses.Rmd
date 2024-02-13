@@ -1,0 +1,86 @@
+---
+title: "PCAngsd_analyses"
+author: "Hugo DENIS"
+date: "2024-02-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Packages
+```{r}
+library(openxlsx)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(RcppCNPy)
+```
+
+#Load covariance matrix 
+```{r}
+meta=read.csv('/home/hdenis/Data/GBR_data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
+
+path='/nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/'
+
+# Load covariance matrix 
+cov <- as.matrix(read.table(paste0(path,"pcangsd.cov"))) 
+
+#Find individuals id in covariance matrix 
+list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/bam.filelist.txt',col.names='file')
+list_files$individualID=paste0("Aspat_",sub("_.*", "",sub(".*-","",basename(list_files$file))))
+```
+
+ #Perform PCA 
+```{r}
+
+mme.pca <- eigen(cov) #perform the pca using the eigen function. 
+
+eigenvectors = mme.pca$vectors #extract eigenvectors 
+pca.vectors = cbind(data.frame(individualID=list_files$individualID), data.frame(eigenvectors)) %>% merge(meta %>% dplyr::select(individualID,locationID),by="individualID") 
+
+mycolors<-c("#1ba3c6" ,"#2cb5c0" ,"#21B087", "#33a65c" ,"#a2b627" ,"#f8b620", "#f89217", "#f06719","#e03426" ,"#f64971", "#fc719e" , "#ce69be", "#7873c0", "#4f7cba","grey")
+names(mycolors)<-unique(meta$locationID)
+
+pca = ggplot(data = pca.vectors, aes(x=X1, y=X2, colour = locationID)) + geom_point()
+```
+
+## Trash 
+```{r}
+
+
+#Main PCA Plot 
+pca_plot<-autoplot(env.pca,label=F,label.size=50,colour="transparent",loadings=T,loadings.label=F,loadings.colour="grey",loadings.label.colour = "black",loadings.label.repel = F,loadings.label.size=5) + theme_classic() + geom_point(aes(colour=sites),alpha=0.2,size=2) + theme(axis.text.x=element_text(size=20,color="black"),axis.text.y=element_text(size=20,color="black"),axis.title.x = element_text(size=20,color="black"),axis.title.y = element_text(size=20,color="black",margin = ggplot2::margin(t = 0, r = 15, b = 0, l = 0)),legend.title = element_text(size=20,color="black"),legend.text = element_text(size=20,color="black"),legend.position = "none",legend.background = element_rect(fill = "transparent"),
+          panel.background = element_rect(colour = "black", size=1.5)) + scale_colour_manual(values = mycolors,name="Site name",labels=names(mycolors)) + guides(colour = guide_legend(override.aes = list(size=5))) 
+
+dat_pca=data.frame(PC1=pca_plot$data$PC1,PC2=pca_plot$data$PC2)
+dat_pca$Site.name=sites
+sites_pca_barycentre=dat_pca %>% group_by(Site.name) %>% dplyr::summarize(PC1=mean(PC1),PC2=mean(PC2))
+
+
+#Adjust label position to avoid overlap
+sites_pca_barycentre$hjust=c(0.003,0,0.005,-0.002,0,0.004,-0.002,-0.01,-0.002,0.00,0.004,-0.01,-0.006,0)
+sites_pca_barycentre$vjust=c(0.002,-0.004,0.006,0,0,0,0,-0.002,-0.003,-0.002,0.001,-0.005,0.004,-0.005)
+
+#Get scaling factor from autoplot
+scores <- data.frame(env.pca$x[, 1:2])
+scores[] <- lapply(scores, function(x) x / sqrt(sum((x - mean(x))^2)))
+loadings <- as.data.frame(env.pca$rotation)[1:2]
+scale <- min(max(abs(scores$PC1))/max(abs(loadings$PC1)),
+             max(abs(scores$PC2))/max(abs(loadings$PC2))) * 0.8
+
+#Modify loadings names to keep only uncorrelated ones 
+PCAloadings <- data.frame(Variables = rownames(env.pca$rotation), env.pca$rotation)
+PCAloadings$Variables[!PCAloadings$Variables %in% c(colnames(colony_env_wide_red),"MMM")]=""
+
+
+pca_plot=pca_plot+ ggrepel::geom_text_repel(size=7.5,aes(x=PC1+hjust,y=PC2+vjust,label=Site.name,colour=Site.name),data=sites_pca_barycentre) + scale_colour_manual(values = mycolors,name="Site name",labels=names(mycolors)) +annotate("text", x = (PCAloadings$PC1)*scale, y = (PCAloadings$PC2)*scale,
+     label = PCAloadings$Variables,size=6)
+
+pca_plot$layers[[2]]$aes_params$size <- 0.7
+pca_plot$layers[[1]]$aes_params$size <- 50
+
+ggsave(pca_plot,filename=paste0(path_out,"Figure_4.png"),width=14,height=10,dpi=320)
+```
+
