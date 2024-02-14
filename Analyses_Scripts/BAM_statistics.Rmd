@@ -101,6 +101,21 @@ l_plot=cov_stat %>% group_by(Ref,rname) %>% dplyr::summarise(meancov=mean(covera
 
 ```
 
+ #Check percentage of reads uniquely mapped to chromosome 
+```{r}
+path='/nvme/disk0/lecellier_data/WGS_GBR_data/Uniquely_mapped_reads_files/'
+
+#Coverage 
+cov_stat_uniq=list.files(path,"*coverage.txt",full.names = T) %>% lapply(function(x)read.table(x,header=T,comment.char="",col.names=c('rname',"startpos","endpos","numreads","covbases","coverage","meandepth","meanbaseq","meanmapq")) %>% mutate(sample.name=sub("-coverage.*", "",basename(x)))) %>% bind_rows
+cov_stat_uniq$individualID=paste0(sapply(strsplit(cov_stat_uniq$sample.name,"-"),"[[",4),"_",sub("_.*", "",sub(".*-","",cov_stat_uniq$sample.name)))
+cov_stat_uniq=cov_stat_uniq %>% mutate(Ref=sub(".*_", "",sample.name))
+cov_stat_uniq=cov_stat_uniq %>% merge(meta[,c("individualID","locationID")],by="individualID",all.x=T)
+
+
+#Some issues check again 
+map_chr=cov_stat_uniq %>% group_by(individualID) %>% dplyr::summarize(numreads_uniq=sum(numreads)) %>% merge(cov_stat %>% subset(Ref=="Amillepora") %>% group_by(individualID) %>% dplyr::summarize(numreads_notuniq=sum(numreads)) %>% dplyr::select(individualID,numreads_notuniq),by="individualID") %>% merge(df_stat %>% subset(Ref=="Amillepora") %>% group_by(individualID) %>% dplyr::summarize(mapped=sum(mapped),unmapped=sum(unmapped)) %>% dplyr::select(individualID,mapped,unmapped),by="individualID")%>% ggplot(aes(x=individualID,y=100*numreads_uniq/(mapped+unmapped))) + geom_col(colour='black',fill='white',position='dodge2') + theme_classic() + labs(x='Sample',y='% Mapped reads',fill='Ref genome') + theme(axis.text.x = element_text(angle=45,vjust = 1, hjust = 1)) + coord_cartesian(ylim=c(80,100))
+```
+
 
 #Save plots 
 ```{r}
