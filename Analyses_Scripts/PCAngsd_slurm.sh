@@ -69,20 +69,24 @@ OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/"
 
 #python /home/hdenis/Programs/pcangsd/pcangsd/pcangsd.py -h
 
-start=`date +%s`
-pcangsd --beagle "${INDIR}GBR_sub_test.beagle.gz" --out "${OUTDIR}pcangsd" --maf 0.05 --threads $NPROCS
-end=`date +%s`
-echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
+#start=`date +%s`
+#pcangsd --beagle "${INDIR}GBR_sub_test.beagle.gz" --out "${OUTDIR}pcangsd" --maf 0.05 --threads $NPROCS
+#end=`date +%s`
+#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
 #Parameters 
 #--maf 0.05 (minimum minor allele frequency)
 
 #Perform Bayesian hiearchical clustering admixture analyses
-#start=`date +%s`
-#python /home/hdenis/Programs/pcangsd/pcangsd/pcangsd.py -beagle "${INDIR}GBR_sub_test.input.beagle.gz" -out "${OUTDIR}admix" --maf 0.05 --admix -threads $NPROCS
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
+#Using different values of K 
+start=`date +%s`
+for K in `seq 1 1 5`;
+do pcangsd --beagle "${INDIR}GBR_sub_test.beagle.gz" --out "${OUTDIR}admix_K${K}" --maf 0.05 --admix --admix_K $K --threads $NPROCS
+done
+end=`date +%s`
+echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+
 
 #To run this script 
-#sbatch /home/hdenis/Coral-Genomics/Analyses_Scripts/PCAngsd_slurm.sh --output=/home/hdenis/Slurm/output.
+#sbatch /home/hdenis/Coral-Genomics/Analyses_Scripts/PCAngsd_slurm.sh 
 
