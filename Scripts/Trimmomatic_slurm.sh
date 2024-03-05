@@ -76,7 +76,7 @@ done
 #Run Trimmomatic in parallel mode : assign each file to 1 CPU -> seems to work better than providing files one by one with -threads N argument
 #Trim log removed as it takes too much storage -trimlog "${OUTDIR}{}_trim.log"
 start=`date +%s`
-cat /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/ids.txt | parallel --jobs $NPROCS "java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}{}_sum.txt" "${INDIR}{}_1.fq.gz" "${INDIR}{}_2.fq.gz" "${OUTDIR}{}_R1_paired.fastq.gz" "${OUTDIR}{}_R1_unpaired.fastq.gz" "${OUTDIR}{}_R2_paired.fastq.gz" "${OUTDIR}{}_R2_unpaired.fastq.gz" ILLUMINACLIP:/home/hugo/PhD/Genomics/Raw_data_processing/Illumina_adapters_Iva_version.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50"
+cat /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/ids.txt | parallel --jobs $NPROCS "java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}{}_sum.txt" "${INDIR}{}_1.fq.gz" "${INDIR}{}_2.fq.gz" "${OUTDIR}{}_R1_paired.fastq.gz" "${OUTDIR}{}_R1_unpaired.fastq.gz" "${OUTDIR}{}_R2_paired.fastq.gz" "${OUTDIR}{}_R2_unpaired.fastq.gz" ILLUMINACLIP:/nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/Illumina_adapters_Iva_version.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50"
 end=`date +%s`
 echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
@@ -88,17 +88,17 @@ echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 ### Identify empty files after trimmomatic and delete them to avoid crashing multiqc
 #Store their ID in a file to record files that have been eliminated
 TRIMMED_FILES=(/nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/*_paired*.gz)
+> /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/trimming_empty_ids
 for FILE in ${TRIMMED_FILES[@]}; do
     NREADS=$(awk '{s++}END{print s/4}' $FILE)
-    if [ "$NREADS" -eq 0 ]; then
-        echo ${FILE} >> /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/trimming_empty_ids.txt
-        rm $FILE
+    if [ "$NREADS" = 0 ]; then
+        echo $(basename ${FILE}) >> /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/trimming_empty_ids.txt
+        #rm $FILE
     fi   
 done
 
 #### 3. Check quality and adapter trimming
-#Change threads number 
-fastqc --noextract --outdir "Postqfilt_quality_check/" $(ls /nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/*_paired*.gz) --threads 5
+fastqc --noextract --outdir "Postqfilt_quality_check/" $(ls /nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/*_paired*.gz) --threads 20
 
 #Generate one general html with multiqc
 ''' Warning : multiqc will crash if some fastqc reports are empty (0 sequences)'''
