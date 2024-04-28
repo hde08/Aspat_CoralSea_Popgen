@@ -16,6 +16,9 @@
 ### MPI TASKS (cores)
 #SBATCH -n 20
 
+#MEMORY
+#SBATCH --mem=200G
+
 #Output and error directory
 #SBATCH -o /home/hdenis/Slurm/outFile_%j.out
 
@@ -55,7 +58,7 @@ ulimit -s unlimited
 mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/
 
 cd /nvme/disk0/lecellier_data/WGS_GBR_data/
-INDIR="/nvme/disk0/lecellier_data/230404-A00151A_L001/"
+INDIR="/nvme/disk0/lecellier_data/230404-A00199A_L001/"
 OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/"
 
 #List R1 files only 
@@ -88,7 +91,6 @@ echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 ### Identify empty files after trimmomatic and delete them to avoid crashing multiqc
 #Store their ID in a file to record files that have been eliminated
 TRIMMED_FILES=(/nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/*_paired*.gz)
-> /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/trimming_empty_ids
 for FILE in ${TRIMMED_FILES[@]}; do
     NREADS=$(awk '{s++}END{print s/4}' $FILE)
     if [ "$NREADS" = 0 ]; then
@@ -98,9 +100,13 @@ for FILE in ${TRIMMED_FILES[@]}; do
 done
 
 #### 3. Check quality and adapter trimming
-fastqc --noextract --outdir "Postqfilt_quality_check/" $(ls /nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/*_paired*.gz) --threads 20
+mkdir "Postqfilt_quality_check/$(basename $INDIR)"
+
+fastqc --noextract --outdir "Postqfilt_quality_check/$(basename $INDIR)" $(ls /nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/*_paired*.gz) --threads 20
 
 #Generate one general html with multiqc
 ''' Warning : multiqc will crash if some fastqc reports are empty (0 sequences)'''
 
-multiqc Postqfilt_quality_check/ -o Postqfilt_quality_check -f 
+
+
+

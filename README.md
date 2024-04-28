@@ -9,6 +9,14 @@
 5 Extract_bam_unmapped.sh > Extract unmapped reads in different bam file.  
 6 BAM_statistics.sh > Generate statistics on raw sequence, quality, mapping, coverage etc. 
 
+#Scripts writtent for execution using Slurm workload manager
+
+2 Trimmomatic_slurm.sh > Quality trimming and adapter removal.  
+3 Bwa_mem_slurm_v2.sh > Alignment to reference genome.  
+4 picard_slurm.sh > Add read groups, mark and remove duplicates.  
+5 Extract_bam_unmapped_slurm.sh > Extract unmapped reads in different bam file.  
+6 BAM_statistics_slurm.sh > Generate statistics on raw sequence, quality, mapping, coverage etc.  
+
 ### Personal scripts
 
 7 ANGSD.sh > SNP, genotype calling and ANGSD analyses  
