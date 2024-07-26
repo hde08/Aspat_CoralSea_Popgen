@@ -1,0 +1,362 @@
+---
+title: "BAM_file_statistics"
+author: "Hugo DENIS"
+date: "2024-01-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Packages
+```{r}
+library(openxlsx)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(tidyr)
+library(cowplot)
+library(data.table)
+```
+
+#### This scripts uses mapped BAM files to produce basic statistics on A.spathulata WGS data ####   
+# This includes coverage, base quality, sequencing depth, mapping quality ...
+
+#Load samples metadata (A.spathulata 2022 only)
+```{r}
+meta=read.csv('/home/hdenis/Data/GBR_data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
+```
+
+#Load BAM stats files  
+```{r}
+path='/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/Vcf_files/'
+
+#Sample names 
+list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_clean.filelist.txt',col.names=c("file"))
+list_files$ID=sapply(strsplit(basename(list_files$file),"_"),"[[",1)
+list_files$individualID=paste0("Aspat_",sapply(strsplit(basename(list_files$ID),"-"),"[[",6))
+
+#Genotype frequencies
+freq=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt_biallelic.frq"),sep=" ",header=T,col.names=c("CHROM","POS","N_ALLELES","N_CHR","ALLELE1:FREQ1","ALLELE2:FREQ2"),fill=T,select=c(1:6))
+freq=freq %>% sample_n(round(nrow(freq)/1000))
+freq$freq1=as.numeric(sapply(strsplit(freq$`ALLELE1:FREQ1`,":"),"[[",2))
+freq$freq2=as.numeric(sapply(strsplit(freq$`ALLELE2:FREQ2`,"\\:"),"[[",2))
+freq=freq %>% rowwise() %>% mutate(maf=min(freq1,freq2))
+
+
+#Individual depth
+idepth=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.idepth"),header=T)
+
+#Individual missingness
+imis=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.imiss"),header=T)
+imis$F_MISS=100*imis$F_MISS
+
+#Linkage desequilibrim
+ld=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.ld"),header=T)
+ld$DIST=abs(ld$BP_A-ld$BP_B)
+
+#Site depth
+sdepth=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.ldepth.mean"),header=T)
+sdepth=sdepth %>% subset(MEAN_DEPTH<50)
+
+#Site misingness
+smis=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.lmiss"),header=T)
+smis$F_MISS=100*smis$F_MISS
+
+#Site quality
+squal=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.lqual"),header=T)
+squal=squal %>% subset(QUAL<1000)
+
+#Individual relatedness (method from Yang et al., Nature Genetics 2010)
+relat=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.relatedness"),header=T)
+
+#Site nucleotide diversity (pi)
+pi=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.sites.pi"),header=T)
+
+#individual heterozigoty
+het=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.het"),header=T)
+
+#Sites Fisher strand score
+fs=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.FS"),header=F)
+fs$V1=as.numeric(fs$V1)
+
+#Sites mapping quality rank sum
+mqrs=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.MQRankSum"),header=F)
+mqrs$V1=as.numeric(mqrs$V1)
+
+#Sites quality by depth
+qd=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.QD"),header=F)
+qd$V1=as.numeric(qd$V1)
+
+#Sites read pos rank sum
+rprs=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.ReadPosRankSum"),header=F)
+rprs$V1=as.numeric(rprs$V1)
+
+#Sites HWE test values
+hwe=fread(paste0(path,"aspat_clean_all_chr_SNP_nofilt.hwe"),header=T)
+
+#Genotype qualities (0.1% subset)
+gq=fread(paste0(path,"aspat_clean_all_chr_SNP_random_subset_GQ_stat.table"),header=T,colClasses = c(rep("character",3),rep("numeric",823)))
+
+#Genotype depth 
+gdp=fread(paste0(path,"aspat_clean_all_chr_SNP_random_subset_DP_stat.table"),header=T,colClasses = c(rep("character",3),rep("numeric",823)))
+```
+
+#Make global statistics plot (before filtration)
+```{r}
+
+
+hist_custom=function(x,var,lab){
+  median=median(as.numeric(x[[var]]),na.rm=T)
+
+  p = x %>% ggplot(aes_string(x=var)) + geom_histogram(colour="black",fill="white") + theme_classic()+ theme(axis.text.x = element_text(size=15),axis.text.y = element_text(size=15),axis.title.y = element_text(size=23),axis.title.x = element_text(size=23),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + geom_vline(xintercept =median,size=1,linetype="dashed",colour="#C60012") 
+  
+  #Set label in the middle of the plot 
+  yint=layer_scales(p)$y$get_limits()[2]/2
+  
+  p=p + geom_text(x=median,y=yint,label=as.character(round(median,3)),hjust=-0.1,size=10,colour="#C60012") +scale_y_continuous(expand=c(0,0)) + labs(x=lab,y="#") + scale_x_continuous(labels=function(x) sprintf("%.2f",x))
+  return(p)
+}
+
+
+
+#Site statistics : Depth, misingness, quality, maf
+p1=hist_custom(freq,"maf","MAF")
+p2=hist_custom(sample_n(squal,round(nrow(squal)/1000)),"QUAL","Sites mean quality")
+p3=hist_custom(sample_n(sdepth,round(nrow(sdepth)/1000)),"MEAN_DEPTH","Sites mean depth")
+p4=hist_custom(sample_n(smis,round(nrow(smis)/1000)),"F_MISS","Sites % Missingness")
+
+sitestat=ggdraw() + draw_plot(p1,x=0,y=0.5,width=0.5,height=0.5) + draw_plot(p2,x=0.5,y=0.5,width=0.5,height=0.5) + draw_plot(p3,x=0,y=0,width=0.5,height=0.5) + draw_plot(p4,x=0.5,y=0,width=0.5,height=0.5) + draw_plot_label(c("a","b","c","d"),x=c(0,0.5,0,0.5),y=c(1,1,0.5,0.5),size=25)+ theme(plot.margin = unit(c(1,3,1,1),"cm"),plot.background = element_rect(fill='white',color='transparent')) 
+
+#Individual statistics
+p1=hist_custom(idepth,"MEAN_DEPTH","Individual mean depth")
+p2=hist_custom(imis,"F_MISS","Individual % Missingness")
+p3=hist_custom(het,"F","Heterozygosity (F)")
+
+
+indstat=ggdraw() + draw_plot(p1,x=0,y=0.5,width=0.5,height=0.5) + draw_plot(p2,x=0.5,y=0.5,width=0.5,height=0.5) + draw_plot(p3,x=0,y=0,width=0.5,height=0.5) + draw_plot_label(c("a","b","c"),x=c(0,0.5,0),y=c(1,1,0.5),size=25)+ theme(plot.margin = unit(c(1,1,1,1),"cm"),plot.background = element_rect(fill='white',color='transparent')) 
+
+```
+
+#Output additional site stats 
+```{r}
+#Site statistics : Depth, misingness, quality, maf
+p1=hist_custom(sample_n(fs,round(nrow(fs)/1000)),"V1","FS")
+p2=hist_custom(sample_n(mqrs,round(nrow(mqrs)/1000)),"V1","Map quality rank sum")
+p3=hist_custom(sample_n(qd,round(nrow(qd)/1000)),"V1","Quality by depth")
+p4=hist_custom(sample_n(rprs,round(nrow(rprs)/1000)),"V1","Read position rank sum")
+p5=hist_custom(sample_n(hwe,round(nrow(hwe)/1000)),"V1","HWE test")
+
+sitestat2=ggdraw() + draw_plot(p1,x=0,y=0.5,width=0.33,height=0.5) + draw_plot(p2,x=0.33,y=0.5,width=0.33,height=0.5) + draw_plot(p3,x=0.66,y=0.5,width=0.33,height=0.5) + draw_plot(p4,x=0,y=0,width=0.33,height=0.5)+ draw_plot(p5,x=0.33,y=0,width=0.33,height=0.5) + draw_plot_label(c("a","b","c","d","e"),x=c(0,0.33,0.66,0,0.33),y=c(1,1,1,0.5,0.5),size=25)+ theme(plot.margin = unit(c(1,3,1,1),"cm"),plot.background = element_rect(fill='white',color='transparent')) 
+```
+
+
+#Percentage of sites with at least one missing genotype
+```{r}
+NSITES=nrow(smis)
+
+#Percentage of sites remaining : 85%
+100*sum(smis$F_MISS==0)/nrow(smis)
+
+#Number of sites filtered out : 12 M sites 
+sum(smis$F_MISS!=0)
+
+#Number of sites after filtration of missing data : 69 M sites 
+sum(smis$F_MISS==0)
+
+#Check what percentage of those sites would have been filterd out by low quality or depth 
+#Half of the sites are removed by filtering by quality and average depth 
+smis_sub=smis[squal$QUAL>30 & sdepth$MEAN_DEPTH>3]
+100*sum(smis_sub$F_MISS==0)/nrow(smis_sub)
+
+sum(smis_sub$F_MISS!=0)
+
+#Check distribution across the genome 
+mis_plot=smis %>% group_by(CHR) %>% mutate(Size=max(POS),intervals=cut(POS,c(seq(1,max(Size),by=1000),max(Size)))) %>% group_by(CHR,intervals) %>% dplyr::summarize(meanmis=mean(F_MISS,na.rm=T),meanpos=mean(POS))
+
+mis_plot$CHR=gsub("scaffold_","Chr",mis_plot$CHR)
+mis_plot$CHR=factor(mis_plot$CHR,levels=paste0("Chr",as.character(seq(1,14))))
+
+max_mis=mean(mis_plot$meanmis)+sd(mis_plot$meanmis)
+mis_plot=mis_plot %>% rowwise() %>% mutate(colour=if_else(meanmis>max_mis,"red",if_else(meanmis>0,"blue","grey")))
+
+#Distribution of missigness across sites 
+mis_plot=mis_plot %>% ggplot(aes(x=meanpos/(10^6),y=meanmis))   + geom_point(aes(colour=colour),size=0.8) + theme_classic() + labs(x='Position (Mb)',y='% Miss') + theme(axis.text.x = element_text(size=20,angle=90),axis.text.y = element_text(size=20),axis.title.y = element_text(size=23),axis.title.y.right=element_text(margin=margin(t=0,r=0,b=0,l=10),size=23),axis.title.x = element_text(size=23),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm"))+ scale_x_continuous(n.breaks=10) + facet_wrap(.~CHR,scales="free")+ theme(strip.text=element_text(size=25))
+
+#Plot zoom of histogram 
+
+p = smis %>% sample_n(round(nrow(smis)/1000)) %>% subset(F_MISS>0)  %>% ggplot(aes(x=F_MISS)) + geom_histogram(colour="black",fill="white",bins=50) + theme_classic()+ theme(axis.text.x = element_text(size=15),axis.text.y = element_text(size=15),axis.title.y = element_text(size=23),axis.title.x = element_text(size=23),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + scale_x_continuous(limits=c(0,4)) + labs(x='% Site missingness',y='#')
+```
+
+#Investigate genotype qualities and depth on a 0.1% subset of the vcf file
+for memory reasons
+```{r}
+gq$meanGQ=rowMeans(gq[,4:826],na.rm=T)
+gdp$meanDP=rowMeans(gdp[,4:826],na.rm=T)
+
+#Global histogram
+p1=hist_custom(gq,"meanGQ","Genotype Quality")
+p2=hist_custom(gdp %>% subset(meanDP<20),"meanDP","Genotype Depth")
+
+#Separate by variant qual 
+p1_highqual=hist_custom(gq %>% subset(FILTER=="PASS"),"meanGQ","Genotype Quality")
+p1_lowqual=hist_custom(gq %>% subset(FILTER=="LowQual"),"meanGQ","Genotype Quality")
+
+p2_highqual=hist_custom(gdp %>% subset(meanDP<20 & FILTER=="PASS"),"meanDP","Genotype Depth")
+p2_lowqual=hist_custom(gdp %>% subset(meanDP<20 & FILTER=="LowQual"),"meanDP","Genotype Depth")
+
+genostat=ggdraw() + draw_plot(p1_highqual,x=0,y=0.5,width=0.5,height=0.5) + draw_plot(p1_lowqual,x=0.5,y=0.5,width=0.5,height=0.5) + draw_plot(p2_highqual,x=0,y=0,width=0.5,height=0.5) + draw_plot(p2_lowqual,x=0.5,y=0,width=0.5,height=0.5) + draw_plot_label(c("a","b","c","d"),x=c(0,0.5,0,0.5),y=c(1,1,0.5,0.5),size=25)+ theme(plot.margin = unit(c(1,3,1,1),"cm"),plot.background = element_rect(fill='white',color='transparent')) 
+
+#Percentage of missinging annotation 
+100*sum(is.na(gdp[,4:826]))/(nrow(gdp[,4:826])*ncol(gdp[,4:826]))
+
+#Percentage of sites with DP=0
+100*sum(gdp[,4:826]==0,na.rm=T)/(nrow(gdp[,4:826])*ncol(gdp[,4:826]))
+
+#Percentage of sites with GQ<20
+100*sum(gq[,4:826]<20,na.rm=T)/(nrow(gq[,4:826])*ncol(gq[,4:826]))
+```
+
+
+#Investigate LD 
+```{r}
+ld$distc=cut(ld$DIST,breaks=seq(from=0,to=100000,by=100))
+ld100=ld %>% group_by(distc) %>% dplyr::summarize(mean=mean(R2),median=median(R2))
+ld100$dist=seq(100,100000,100)
+
+ld_plot=ld100 %>% ggplot(aes(x=dist,y=mean)) + geom_line(colour="grey",size=1)  + geom_point(colour="black",size=2)  + theme_classic() + labs(x='Distance (kb)',y=expression("LD (mean r²)")) + theme(axis.text.x = element_text(size=20,angle=90),axis.text.y = element_text(size=20),axis.title.y = element_text(size=23),axis.title.y.right=element_text(margin=margin(t=0,r=0,b=0,l=10),size=23),axis.title.x = element_text(size=23),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + scale_x_continuous(breaks=seq(0,100000,by=10000),labels=seq(0,100,by=10))
+```
+
+
+#Look at PI/bp variation across the genome 
+```{r}
+#Pi distribution
+pi_hist=hist_custom(sample_n(pi,round(nrow(pi)/1000)),"PI","\u03C0/bp")
+
+pi_plot=pi %>% group_by(CHROM) %>% mutate(Size=max(POS),intervals=cut(POS,c(seq(1,max(Size),by=1000),max(Size)))) %>% group_by(CHROM,intervals) %>% dplyr::summarize(meanpi=mean(PI,na.rm=T),meanpos=mean(POS))
+
+pi_plot$CHROM=gsub("scaffold_","Chr",pi_plot$CHROM)
+pi_plot$CHROM=factor(pi_plot$CHROM,levels=paste0("Chr",as.character(seq(1,14))))
+
+pi_plot=pi_plot %>% ggplot(aes(x=meanpos/(10^6),y=meanpi))   + geom_point(colour="grey",size=0.8) + theme_classic() + labs(x='Position (Mb)',y='\u03C0/bp') + theme(axis.text.x = element_text(size=20,angle=90),axis.text.y = element_text(size=20),axis.title.y = element_text(size=23),axis.title.y.right=element_text(margin=margin(t=0,r=0,b=0,l=10),size=23),axis.title.x = element_text(size=23),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm"))+ geom_smooth(method ="loess",se=F,colour="#00A86B",span=0.25)+ scale_x_continuous(n.breaks=10) + facet_wrap(.~CHROM,scales="free")+ theme(strip.text=element_text(size=25))
+
+```
+
+
+#Save plots 
+```{r}
+path_save="/home/hdenis/Coral-Genomics/Figures/"
+
+
+ggsave(sitestat,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Hard_call_variants_site_stat",".png"),width=20,height=14,dpi=320)
+
+ggsave(genostat,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Hard_call_variants_geno_stat",".png"),width=20,height=14,dpi=320)
+
+ggsave(sitestat2,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Hard_call_variants_site_stat2",".png"),width=20,height=14,dpi=320)
+
+ggsave(indstat,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Hard_call_variants_ind_stat",".png"),width=20,height=14,dpi=320)
+
+ggsave(pi_hist,filename=paste0(path_save,"Genome_scans/Pi_hist",".png"),width=25,height=14,dpi=320)
+
+ggsave(ld_plot,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/LD",".png"),width=15,height=14,dpi=320)
+
+ggsave(plot,filename=paste0(path_save,"Genome_scans/Pi_per_bp_across_sites",".png"),width=25,height=14,dpi=320)
+
+ggsave(mis_plot,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Site_missingness_across_chr",".png"),width=25,height=14,dpi=320)
+
+ggsave(p,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Site_missingness_histo",".png"),width=15,height=14,dpi=320)
+
+```
+
+#############################################
+#### Explore statistics after filtration ####   
+#############################################
+
+```{r}
+path='/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/Vcf_files/'
+
+#Look at percentage of sites passing/failing GATK filters 
+filt_stat=fread(paste0(path,"aspat_clean_all_chr_SNP_filtered1_stat.table"),header=T)
+filt_stat=filt_stat %>% sample_n(round(nrow(filt_stat)/100))
+
+#Site depth
+sdepth=fread(paste0(path,"aspat_clean_all_chr_SNP_filtered1.ldepth.mean"),header=T)
+sdepth=sdepth %>% subset(MEAN_DEPTH<50)
+
+#Individual missingness
+imis=fread(paste0(path,"aspat_clean_all_chr_SNP_filtered1.imiss"),header=T)
+imis$F_MISS=100*imis$F_MISS
+
+#Site misingness
+smis=fread(paste0(path,"aspat_clean_all_chr_SNP_filtered1.lmiss"),header=T)
+smis$F_MISS=100*smis$F_MISS
+
+#Site misingness plink
+smis_plink=fread(paste0(path,"aspat_clean_all_chr_SNP_filtered1_plink.lmiss"),header=T)
+smis_plink$F_MISS=100*smis_plink$F_MISS
+```
+
+#Percentage of sites with missing data
+```{r}
+NSITES_TOT=nrow(squal)
+NSITES_FILT=nrow(smis)
+
+#Percentage of sites remaining : 85%
+100*sum(smis$F_MISS!=0)/NSITES_FILT
+
+#Number of sites filtered out : 12 M sites 
+sum(smis$F_MISS!=0)
+
+#Number of sites after filtration of missing data : 69 M sites 
+sum(smis$F_MISS==0)
+
+#Plink -> same results 
+100*sum(smis_plink$F_MISS!=0)/nrow(smis_plink)
+```
+
+
+```{r}
+path_save="/home/hdenis/Coral-Genomics/Figures/"
+
+p1=hist_custom(sample_n(sdepth,round(nrow(sdepth)/1000)),"MEAN_DEPTH","Sites mean depth")
+p2=hist_custom(sample_n(smis,round(nrow(smis)/1000)),"F_MISS","Sites % Missingness")
+
+sitestat=ggdraw() + draw_plot(p1,x=0,y=0.5,width=0.5,height=0.5) + draw_plot(p2,x=0.5,y=0.5,width=0.5,height=0.5) + draw_plot_label(c("a","b","c","d"),x=c(0,0.5,0,0.5),y=c(1,1,0.5,0.5),size=25)+ theme(plot.margin = unit(c(1,3,1,1),"cm"),plot.background = element_rect(fill='white',color='transparent')) 
+
+ggsave(sitestat,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Hard_call_variants_site_stat_filtered1",".png"),width=15,height=14,dpi=320)
+
+#Individual misingness
+p2=hist_custom(imis,"F_MISS","Individual % Missingness")
+
+
+indstat=ggdraw() +draw_plot(p2,x=0.5,y=0.5,width=0.5,height=0.5) + draw_plot_label(c("a","b","c"),x=c(0,0.5,0),y=c(1,1,0.5),size=25)+ theme(plot.margin = unit(c(1,1,1,1),"cm"),plot.background = element_rect(fill='white',color='transparent')) 
+
+ggsave(indstat,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Hard_call_variants_ind_stat_filtered1",".png"),width=15,height=14,dpi=320)
+
+#Proportion of sites filtered out by GATK first step
+
+#Separate sites that have been filtered out for distinct reasons 
+N=nrow(filt_stat)
+filt_stat=filt_stat %>% separate_rows(FILTER,sep=",")
+
+#Compute proportion of sites falling in each filter category
+prop_filtered = filt_stat %>% group_by(FILTER) %>% dplyr::summarize(Prop=100*n()/N) %>% arrange(desc(Prop)) %>% subset(FILTER!="LowQual")
+prop_filtered$FILTER=factor(prop_filtered$FILTER,levels=prop_filtered$FILTER)
+
+prop_filtered=prop_filtered%>% ggplot(aes(x=FILTER,y=Prop)) + geom_col(colour="black",fill="grey") + theme_classic()+ theme(axis.text.x = element_text(size=25,angle=45,hjust=0.95),axis.text.y = element_text(size=25),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + labs(y="% of sites",x="FILTER CODE")
+
+#Average depth 
+filt_stat=filt_stat %>% distinct(CHROM,POS,.keep_all = T)
+filt_stat$mean_DP=filt_stat$DP/823
+
+#Slight difference from output of vcftools that might come from the fact that we downsampled 
+p1=hist_custom(sample_n(filt_stat,round(nrow(filt_stat)/1000)),"mean_DP","Sites mean depth")
+
+ggsave(prop_filtered,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Prop_filtered1",".png"),width=15,height=14,dpi=320)
+
+ggsave(p1,filename=paste0(path_save,"Diagnostic_plot_fasq_to_variant/Site_depth_filtered1_histo",".png"),width=15,height=14,dpi=320)
+
+#Ind
+```
+

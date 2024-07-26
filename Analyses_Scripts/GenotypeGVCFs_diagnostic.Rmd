@@ -1,0 +1,57 @@
+---
+title: "GenotypeGVCFs_diagnostic"
+author: "Hugo DENIS"
+date: "2024-07-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load library
+```{r,message=F}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+#Load the GenotypeGVCFs output
+```{r}
+out=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Vcf_performance.txt',sep="-",skip=1,header=T)
+out=out %>% select(Current.Locus..Elapsed.Minutes....Variants.Processed..Variants.Minute)
+out$Current.Locus..Elapsed.Minutes....Variants.Processed..Variants.Minute=gsub("^\\s+","",out$Current.Locus..Elapsed.Minutes....Variants.Processed..Variants.Minute)
+out$Current.Locus..Elapsed.Minutes....Variants.Processed..Variants.Minute=gsub("\\s+"," ",out$Current.Locus..Elapsed.Minutes....Variants.Processed..Variants.Minute)
+out=out %>% separate(Current.Locus..Elapsed.Minutes....Variants.Processed..Variants.Minute,into=c("Current.locus","Elapsed.Minutes","Variants.Processed","Variants.Minute"),sep=" ")
+
+out$Variants.Processed=as.numeric(out$Variants.Processed)
+out$Elapsed.Minutes=as.numeric(out$Elapsed.Minutes)
+out$Variants.Minute=as.numeric(out$Variants.Minute)
+```
+
+#Print evolution of variants processed with time 
+```{r}
+varproc=out %>% ggplot() + geom_line(aes(x=Elapsed.Minutes,y=Variants.Processed),size=2) + theme_classic()+ theme(axis.text.x = element_text(size=15),axis.text.y = element_text(size=15),axis.title.y = element_text(size=23),axis.title.x = element_text(size=23),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) 
+
+varmin=out %>% ggplot() + geom_line(aes(x=Elapsed.Minutes,y=Variants.Minute),size=2) + theme_classic()+ theme(axis.text.x = element_text(size=15),axis.text.y = element_text(size=15),axis.title.y = element_text(size=23),axis.title.x = element_text(size=23),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) 
+
+plot(varproc)
+plot(varmin)
+```
+
+#Estimate time to run the job if no memory issue 
+```{r}
+meanvarmin=mean((out %>% subset(Elapsed.Minutes>20))$Variants.Minute)
+
+#Read size of chromosomes
+chr=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/Amil_scaffolds_final_v3.dict',sep="\t",header=F,skip=1,col.names=c("SQ","chromosome","Size"," "," "))
+chr=chr %>% select(chromosome,Size)
+chr$chromosome=sapply(strsplit(chr$chromosome,":"),"[[",2)
+chr$Size=sapply(strsplit(chr$Size,":"),"[[",2)
+chr$Size=as.numeric(chr$Size)
+chr=chr[1:14,]
+
+#Estimate time (in hours) for each chromosome
+chr %>% mutate(EstTimeProc=Size/(meanvarmin*60))
+```
+

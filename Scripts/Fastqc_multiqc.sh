@@ -22,3 +22,26 @@ done
 
 #Generate one general html with multiqc
 multiqc Initial_quality_check/ -o Initial_quality_check -f 
+
+#Generate multiple multiqc after running Trimmomatic (for visualization purpose)
+#List fastqc files 
+mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq1/
+mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq2/
+mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq3/
+mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq4/
+mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq5/
+
+FASTQC=(/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/*_fastqc.zip)
+
+mv -t /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq1/ "${FASTQC[@]:0:300}"
+mv -t /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq2/ "${FASTQC[@]:300:300}"
+mv -t /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq3/ "${FASTQC[@]:600:300}"
+mv -t /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq4/ "${FASTQC[@]:900:300}"
+mv -t /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq5/ "${FASTQC[@]:1200:334}"
+
+#Run multiqc in each folder 
+multiqc "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq1/" -o "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq1/" -f -d
+multiqc "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq2/" -o "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq2/" -f -d
+multiqc "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq3/" -o "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq3/" -f -d
+multiqc "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq4/" -o "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq4/" -f -d
+multiqc "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq5/" -o "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/Fastq5/" -f -d

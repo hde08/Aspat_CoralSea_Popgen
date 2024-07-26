@@ -19,6 +19,32 @@ library(RcppCNPy)
 library(tidyr)
 ```
 
+###1. Multiple species population genetics ###
+# -> Confirm taxonomic assignation of Aspat samples 
+
+#Create a subset of Aspat/Amil/Ahya to sort out potential aspat mis_id -> to remove from final version
+```{r}
+#Get list of files ID (all files after exclusion of low quality samples )
+list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/bam.filelist2.txt',col.names='file')
+list_files$ID=sapply(strsplit(basename(list_files$file),"_"),"[[",1)
+
+#Get list of samples that have a correct species assignation
+species=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/bam_correct_species_id.txt',header=T)
+
+#Remove Amil samples that have been mis-identified 
+species_correct_id=species %>% subset(Species==Correct_species)
+list_files_sub=list_files_sub %>% mutate(filter=if_else(ID %in% species_correct_id$ID,1,0))
+
+#Remove Aspat samples that are putative clones as it will bias the admixture analysis
+list_aspat_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_clean.filelist.txt',col.names='file')
+list_aspat_files$ID=sapply(strsplit(basename(list_aspat_files$file),"_"),"[[",1)
+clones=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_noclones.filelist.txt',col.names = c("filter"))
+list_aspat_files=cbind(list_aspat_files,clones)
+list_files_sub=list_files_sub %>% rowwise() %>% mutate(filter=if_else(ID %in% list_aspat_files$ID[list_aspat_files$filter==0],0,filter))
+
+write.table(list_files_sub %>% dplyr::select(filter),'/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_ahya_subset.filelist.txt',row.names=F,col.names = F,quote=F)
+```
+
 #Load covariance matrix 
 ```{r}
 meta=read.csv('/home/hdenis/Data/GBR_data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
@@ -26,43 +52,343 @@ meta=read.csv('/home/hdenis/Data/GBR_data/Coral colony metadata from the ECT1_RR
 path='/nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/'
 
 # Load covariance matrix 
-cov <- as.matrix(read.table(paste0(path,"pcangsd.cov"))) 
+cov <- as.matrix(read.table(paste0(path,"GBR_allsamples_filt_uniq_all_chr.cov"))) 
 
 #Find individuals id in covariance matrix 
-list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/bam.filelist.txt',col.names='file')
-list_files$individualID=paste0("Aspat_",sub("_.*", "",sub(".*-","",basename(list_files$file))))
+list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/bam.filelist2.txt',col.names='file')
+list_files$ID=sapply(strsplit(basename(list_files$file),"_"),"[[",1)
+
+#Find individuals that were kept to run pcangsd
+keep=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_ahya_subset.filelist.txt',header=F,col.names="filter")
+list_files=cbind(list_files,keep) %>% subset(filter==1)
+
+#list_files$ID=paste0("Aspat_",sub("_.*", "",sub(".*-","",basename(list_files$file))))
 
 #Load admixture results 
-admix_df=list.files(path,"*.Q",full.names=T) %>% lapply(function(x)read.table(x) %>% mutate(K_number=as.numeric(str_sub(x,length(x)-4,length(x)-4)))) %>% bind_rows()
+admix_df=intersect(list.files(path,"*.Q",full.names=T),list.files(path,"GBR_allsamples*",full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=as.numeric(str_sub(x,length(x)-4,length(x)-4)))) %>% bind_rows()
+
+admix_df=cbind(data.frame(ID=rep(list_files$ID,4)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number))) %>% mutate(Species=if_else(grepl("2022-Aspat",ID),"Aspat",if_else(grepl("2022-Amil",ID),"Amil","Ahya")))
 ```
 
- #Perform PCA 
+#Perform PCA (multiple species)
 ```{r}
-
 mme.pca <- eigen(cov) #perform the pca using the eigen function. 
 
 eigenvectors = mme.pca$vectors #extract eigenvectors 
-pca.vectors = cbind(data.frame(individualID=list_files$individualID), data.frame(eigenvectors)) %>% merge(meta %>% dplyr::select(individualID,locationID),by="individualID") 
+pca.vectors = cbind(data.frame(ID=list_files$ID), data.frame(eigenvectors))%>% mutate(Species=if_else(grepl("2022-Aspat",ID),"Aspat",if_else(grepl("2022-Amil",ID),"Amil","Ahya")))
 
-mycolors<-c("#1ba3c6" ,"#2cb5c0" ,"#21B087", "#33a65c" ,"#a2b627" ,"#f8b620", "#f89217", "#f06719","#e03426" ,"#f64971", "#fc719e" , "#ce69be", "#7873c0", "#4f7cba","grey")
-names(mycolors)<-unique(meta$locationID)
+perc1=round(100*mme.pca$values[1]/sum(mme.pca$values),2)
+perc2=round(100*mme.pca$values[2]/sum(mme.pca$values),2)
 
-pca = ggplot(data = pca.vectors, aes(x=X1, y=X2, colour = locationID)) + geom_point()+ theme_classic()
+specolors<-c("#018581","#0571B0","#E66101")
+names(specolors)<-unique(pca.vectors$Species)
+
+pca = ggplot(data = pca.vectors, aes(x=X1, y=X2, fill = Species)) + geom_point(size=4.5,pch=21,colour='black')+ theme_classic() + theme(axis.text.x = element_text(size=30),axis.text.y = element_text(size=30),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30),legend.text=element_text(size=30),legend.title=element_text(size=30),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position=c(.15,.2),legend.text.align = 0) + labs(x=paste0("PC1 (",as.character(perc1),"%)"),y=paste0("PC2 (",as.character(perc2),"%)")) + scale_fill_manual(values=specolors,labels=c(expression(italic("A.hyacinthus")),expression(italic("A.millepora")),expression(italic("A.spathulata")))) + guides(fill=guide_legend(override.aes=list(size=14)))
 ```
 
-#Perform ADMIXTURE analysis
+
+#Perform ADMIXTURE analysis on mixspecies -> Don't do it for now 
 ```{r}
-admix_df=cbind(data.frame(individualID=rep(list_files$individualID,5)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number)))
+popcolors=c("#018581","#E66101","#0571B0","#FFCC33","#A6611A")
+names(popcolors)=paste0("V",as.character(seq(1,5)))
 
 
-admix_plot = ggplot(data = admix_df %>% subset(K_number %in% paste0("K=",as.character(seq(2,5)))), aes(x=individualID, y=Prop, colour = Cluster,fill=Cluster)) + geom_bar(position = "stack",stat="identity") + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(fill=F,colour=F)+facet_wrap(~K_number,ncol=1,nrow=4)
+species_names=c(expression(italic("A.hyacinthus")),expression(italic("A.millepora")),expression(italic("A.spathulata")))
+species_names=c("Ahya"="A.hyacinthus","Amil"="A.millepora","Aspat"="A.spathulata")
+
+admix_plot = ggplot(data = admix_df %>% subset(K_number %in% paste0("K=",as.character(seq(2,5)))), aes(x=ID, y=Prop, colour = Cluster,fill=Cluster)) + geom_bar(position = "stack",stat="identity") + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(fill=F,colour=F)+facet_grid(K_number~Species,scales="free_x",labeller=labeller(Species=species_names,multi_line = F),switch="y") + theme(axis.text.x = element_blank(),axis.text.y = element_text(size=20),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=30,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="Individual",y="Ancestral population") + scale_fill_manual(values=popcolors) + scale_colour_manual(values=popcolors) + scale_y_continuous(expand=c(0,0))
+```
+
+#Save list of Aspat samples after exclusion of the 4 mis-identification and list of mis-identified samples
+```{r}
+#Find individuals in Aspat that are closer to Amil
+admix_df %>% subset(K_number=="K=4") %>% group_by(Species,Cluster) %>% dplyr::summarise(m=mean(Prop))
+
+outlier = admix_df %>% subset(K_number=="K=4" &Species=="Aspat") %>% subset(Cluster=="V2" & Prop>0.1)
+
+list_outliers=list_files %>% subset(ID %in% outlier$ID)
+write.csv(list_outliers%>% dplyr::select(file),paste0(path,"aspat_uncorrectID.txt"),row.names=F,col.names=F,quote=F)
+
+list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/bam.filelist2.txt',col.names='file')
+#Keep only Aspat
+list_files=list_files %>% subset(grepl("Aspat",file))
+
+#Remove the 4 outliers
+list_files=list_files %>% subset(!grepl(paste(ID_outlier,collapse="|"),file))
+
+write.table(list_files,'/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_clean.filelist.txt',row.names=F,col.names = F,quote=F)
 ```
 
 #Save plots 
 ```{r}
 path_save="/home/hdenis/Coral-Genomics/Figures/ANGSD_plot/"
 
-ggsave(pca,filename=paste0(path_save,"Test_pcangsd",".png"),width=14,height=10,dpi=320)
-ggsave(admix_plot,filename=paste0(path_save,"Test_admix_plot",".png"),width=14,height=10,dpi=320)
+ggsave(pca,filename=paste0(path_save,"PCA_mixspecies",".png"),width=14,height=12,dpi=320)
+ggsave(admix_plot,filename=paste0(path_save,"Admix_mixspecies",".png"),width=18,height=10,dpi=320)
+
 ```
 
+
+
+###1. Population genetics of Aspat samples ###
+# -> Assess population structure within Aspat species
+
+#Load covariance matrix 
+```{r}
+meta=read.csv('/home/hdenis/Data/GBR_data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
+meta$locationID[meta$locationID=="Pelorus"]="Pelorus East"
+
+#Sites metadata
+site_meta=read.csv('/home/hdenis/Download_env_data/Env_metrics/all_env_metrics_aspat_sites.csv')
+
+path='/nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/'
+
+# Load covariance matrix with no missing data ((30,312 sites))
+cov <- as.matrix(read.table(paste0(path,"GBR_aspatsamples_filt_05mis_uniq_all_chr_noclones.cov"))) 
+
+clones=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_noclones.filelist.txt',col.names = c("filter"))
+#Find individuals id in covariance matrix 
+list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_clean.filelist.txt',col.names='file')
+list_files$ID=paste0("Aspat_",sub("_.*", "",sub(".*-","",basename(list_files$file))))
+list_files=cbind(list_files,clones) %>% subset(filter==1)
+
+path_save="/home/hdenis/Coral-Genomics/Figures/ANGSD_plot/"
+```
+
+#Perform PCA on aspat samples (05% missing data and putative clones removed)
+#PC1 and PC2
+#PC2 and PC3
+```{r}
+
+mme.pca <- eigen(cov) #perform the pca using the eigen function. 
+
+eigenvectors = mme.pca$vectors #extract eigenvectors 
+pca.vectors = cbind(data.frame(ID=list_files$ID), data.frame(eigenvectors))
+pca.vectors = cbind(data.frame(individualID=list_files$ID), data.frame(eigenvectors)) %>% merge(meta %>% dplyr::select(individualID,locationID),by="individualID") %>% merge(site_meta %>% dplyr::select(Site.name,MMM_5km),by.x="locationID",by.y="Site.name")
+
+#Create cluster column to separate Southern GBR sites from the rest 
+pca.vectors=pca.vectors %>% rowwise() %>% mutate(Cluster=if_else(locationID %in% c("Fitzroy Reef","Heron","Lady Musgrave"),"South","Central/North"))
+
+sitecolors=c("#1ba3c6","#2cb5c0","#FFF880","#FFE135","#C60012")
+
+perc1=round(100*mme.pca$values[1]/sum(mme.pca$values),3)
+perc2=round(100*mme.pca$values[2]/sum(mme.pca$values),3)
+
+pca_05mis_noclones = ggplot(data = pca.vectors, aes(x=X1, y=X2, colour = MMM_5km,group=locationID,shape=Cluster)) + geom_point(size=4,alpha=0.5)+ theme_classic() + theme(axis.text.x = element_text(size=25),axis.text.y = element_text(size=25),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25),legend.text=element_text(size=20,hjust=0),legend.title=element_text(size=20,margin=unit(c(0,0,0.7,0),"cm")),panel.background =element_rect(fill="white"),plot.margin=margin(t=0.5,r=1,b=1,l=1,unit="cm"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(20,"mm")) + labs(x=paste0("PC1 (",as.character(perc1),"%)"),y=paste0("PC2 (",as.character(perc2),"%)"),colour="Site MMM \u00B0C",shape="GBR region") + scale_colour_gradientn(colours=sitecolors,limits=c(27,29),breaks=c(27,27.5,28,28.5,29)) + stat_ellipse(level=0.9) + guides(shape=guide_legend(override.aes=list(size=10),theme=theme(legend.title=element_text(size=20,margin=unit(c(0,0,0.2,0),"cm")),legend.margin=margin(2,0,0,0,unit="cm"))))
+
+
+ggsave(pca_05mis_noclones,filename=paste0(path_save,"PCA_Aspat_05mis_noclones",".png"),width=14,height=10,dpi=320)
+```
+
+#Perform PCA on aspat samples (no missing data )
+```{r}
+
+mme.pca <- eigen(cov) #perform the pca using the eigen function. 
+
+eigenvectors = mme.pca$vectors #extract eigenvectors 
+pca.vectors = cbind(data.frame(ID=list_files$ID), data.frame(eigenvectors))
+pca.vectors = cbind(data.frame(individualID=list_files$ID), data.frame(eigenvectors)) %>% merge(meta %>% dplyr::select(individualID,locationID),by="individualID") %>% merge(site_meta %>% dplyr::select(Site.name,MMM_5km),by.x="locationID",by.y="Site.name")
+
+sitecolors<-c("#1ba3c6","#2cb5c0","#FFF880","#FFE135","#C60012")
+
+perc1=round(100*mme.pca$values[1]/sum(mme.pca$values),3)
+perc2=round(100*mme.pca$values[2]/sum(mme.pca$values),3)
+
+pca_nomis = ggplot(data = pca.vectors, aes(x=X1, y=X2, colour = MMM_5km,group=locationID)) + geom_point(size=4,alpha=0.5)+ theme_classic() + theme(axis.text.x = element_text(size=25),axis.text.y = element_text(size=25),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(20,"mm")) + labs(x=paste0("PC1 (",as.character(perc1),"%)"),y=paste0("PC2 (",as.character(perc2),"%)"),colour="Site MMM") + scale_colour_gradientn(colours=sitecolors,limits=c(27,29),breaks=c(27,27.5,28,28.5,29)) + stat_ellipse(level=0.9) 
+
+# + ggrepel::geom_label_repel(aes(x=mx,y=my,colour=mM,label=locationID),data=pca.vectors %>% group_by(locationID) %>% dplyr::summarise(mx=mean(X1),my=mean(X2),mM=mean(MMM_5km)),size=5,min.segment.length=unit(0,'lines'))
+```
+
+
+
+#Perform ADMIXTURE analysis on Aspat samples 
+```{r}
+admix_df=intersect(list.files(path,"*.Q",full.names=T),list.files(path,"GBR_aspatsamples_filt_05mis_uniq_all_chr_noclones*",full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=as.numeric(str_sub(x,length(x)-4,length(x)-4)))) %>% bind_rows()
+
+admix_df=cbind(data.frame(ID=rep(list_files$ID,4)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number))) %>% merge(meta %>% dplyr::select(individualID,locationID),by.x="ID",by.y="individualID")
+
+#Order sites by latitude 
+site_meta$Site.name[site_meta$Site.name=="Pelorus East"]="Pelorus"
+site_meta=site_meta %>% subset(Site.name %in% unique(admix_df$locationID))
+site_order=site_meta$Site.name[order(site_meta$Lat)]
+
+sitenames=c("Lady M","Fitzroy R","Heron","Davies","Chicken","Pelorus","Kelso","Fitzroy I" ,"Moore","St Crisp","Mackay","Martin","North D","No Name","Hicks")
+names(sitenames)=site_order
+
+popcolors=c("#018581","#E66101","#0571B0","#FFCC33","#A6611A")
+names(popcolors)=paste0("V",as.character(seq(1,5)))
+
+admix_df$locationID=factor(admix_df$locationID,levels=site_order)
+
+admix_plot = ggplot(data = admix_df %>% subset(K_number %in% paste0("K=",as.character(seq(2,4)))), aes(x=ID, y=Prop, colour = Cluster,fill=Cluster)) + geom_bar(position = "stack",stat="identity") + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(fill=F,colour=F)+facet_grid(K_number~locationID,scales="free_x",labeller=labeller(locationID=sitenames,multi_line = F),switch="y") + theme(axis.text.x = element_blank(),axis.text.y = element_text(size=20),axis.title.y = element_text(size=30,vjust=4),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=18),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing.y = unit(1,"cm")) + labs(x="Individual",y="Ancestral population") + scale_fill_manual(values=popcolors) + scale_colour_manual(values=popcolors) + scale_y_continuous(expand=c(0,0))
+```
+
+#Save cluster assignation for IBS analyses 
+#Including technical replicates 
+```{r}
+list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_clean.filelist.txt',col.names='file')
+
+admix_df=intersect(list.files(path,"*.Q",full.names=T),list.files(path,"GBR_aspatsamples*",full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=as.numeric(str_sub(x,length(x)-4,length(x)-4)))) %>% bind_rows()
+
+admix_df=cbind(data.frame(file=rep(list_files$file,4)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number)))
+
+clusters=admix_df %>% subset(K_number=="K=2" & !is.na(Prop)) %>% dplyr::select(file,Cluster,Prop) %>% pivot_wider(names_from =Cluster,values_from = Prop) %>% mutate(Cluster=if_else(V1>0.75,"Group1","Group2"))
+
+write.table(clusters %>% subset(Cluster=="Group1") %>% dplyr::select(file),'/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_group1.filelist.txt',row.names=F,col.names = F,quote=F)
+
+write.table(clusters %>% subset(Cluster=="Group2") %>% dplyr::select(file),'/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_group2.filelist.txt',row.names=F,col.names = F,quote=F)
+```
+
+
+
+#Save plots 
+```{r}
+path_save="/home/hdenis/Coral-Genomics/Figures/ANGSD_plot/"
+
+
+ggsave(admix_plot,filename=paste0(path_save,"Admix_Aspat_05mis_noclones",".png"),width=20,height=10,dpi=320)
+
+# ggsave(pca_05mis,filename=paste0(path_save,"PCA_Aspat_05mis",".png"),width=14,height=10,dpi=320)
+# 
+# ggsave(pca_nomis_noclones,filename=paste0(path_save,"PCA_Aspat_nomis_noclones",".png"),width=14,height=10,dpi=320)
+# 
+# 
+# 
+# ggsave(pca_nomis,filename=paste0(path_save,"PCA_Aspat_nomis",".png"),width=14,height=10,dpi=320)
+# 
+# ggsave(pca_05mis_noout,filename=paste0(path_save,"PCA_Aspat_05mis_noout",".png"),width=14,height=10,dpi=320)
+# 
+# ggsave(pca_05mis_noclones,filename=paste0(path_save,"PCA_Aspat_05mis_noclones",".png"),width=14,height=10,dpi=320)
+# 
+# ggsave(pca_05mis_noclones_PC23,filename=paste0(path_save,"PCA_Aspat_05mis_noclones_PC23",".png"),width=14,height=10,dpi=320)
+
+
+
+
+```
+
+#Visualize Heron colonies
+```{r}
+unep_reef_crop<-sf::st_read("/home/hdenis/Download_env_data/Unep_reefs/unep_reefs_cropped.shp")
+
+subgroup=c("Aspat_1718","Aspat_1719","Aspat_1720","Aspat_1722","Aspat_1728")
+
+map_heron = meta %>% subset(locationID=="Heron") %>% mutate(Group=if_else(individualID %in% outlier,if_else(decimalLatitude<(-23.440),"Outlier 1","Outlier 2"),if_else(individualID %in% subgroup,"Subgroup","Main group"))) %>% ggplot()   + geom_point(aes(x=as.numeric(decimalLongitude),y=as.numeric(decimalLatitude),colour=Group),size=4) + theme_classic() + theme(axis.text.x = element_text(size=20),axis.text.y = element_text(size=20),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + labs(x="Lon",y="Lat") 
+
+ggsave(map_heron,filename=paste0(path_save,"Heron_IBS_group_map",".png"),width=14,height=10,dpi=320)
+```
+
+### Trash ####
+
+
+#Create a subset of Aspat and Amil only to confirm misenditification of some samples
+```{r}
+#Remove Hick, Kelso, Mackay and North Direction sites 
+#Remove Ahya samples 
+list_files_sub=list_files %>% mutate(filter=if_else(!grepl(paste(c("2022-Aspat","2022-Amil"),collapse="|"),file),0,if_else(grepl(paste(c("HICK","KELS","MACK","NDIR"),collapse="|"),file),0,1)))
+
+#Among the remaining samples
+#Subsample a random number of them (even number for Ahya and Aspat)
+aspat=list_files_sub$ID[grepl("2022-Aspat",list_files_sub$file) & list_files_sub$filter==1 & !list_files_sub$ID %in% outlier$ID]
+amil=list_files_sub$ID[grepl("2022-Amil",list_files_sub$file) & list_files_sub$filter==1]
+
+aspat_sub=sample(aspat,size=length(amil)-4)
+
+#bind the outlier ID 
+aspat_sub=c(aspat_sub,outlier$ID)
+
+#Only retain this subset of samples 
+list_files_sub=list_files_sub %>% mutate(filter=if_else(ID %in% c(aspat_sub,amil),1,0))
+
+write.table(list_files_sub %>% dplyr::select(filter),'/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_subset.filelist.txt',row.names=F,col.names = F,quote=F)
+```
+
+#Perform ADMIXTURE analysis of the subset of amil/aspat samples 
+```{r}
+admix_df=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/GBR_amil_aspat_admix_K3.admix.3.Q')
+admix_df=cbind(data.frame(ID=list_files_sub$ID[list_files_sub$filter==1]), data.frame(admix_df)) %>% gather(c(V1,V2,V3),key="Cluster",value="Prop") %>% mutate(Species=if_else(grepl("2022-Aspat",ID),"Aspat",if_else(grepl("2022-Amil",ID),"Amil","Ahya")))
+
+#PCA
+
+cov=as.matrix(read.table(paste0(path,"GBR_amil_aspat_admix_K3.cov"))) 
+
+mme.pca <- eigen(cov) #perform the pca using the eigen function. 
+
+eigenvectors = mme.pca$vectors #extract eigenvectors 
+pca.vectors = cbind(data.frame(ID=list_files_sub$ID[list_files_sub$filter==1]), data.frame(eigenvectors))%>% mutate(Species=if_else(grepl("2022-Aspat",ID),"Aspat",if_else(grepl("2022-Amil",ID),"Amil",if_else(grepl("2022-Ahya",ID),"Ahya","Unknown"))))
+pca.vectors$subID=sub(".*2022-","",pca.vectors$ID)
+pca.vectors$subID=substr(pca.vectors$subID,1,nchar(pca.vectors$subID)-5)
+
+
+specolors<-c("#0571B0","#E66101")
+names(specolors)<-unique(pca.vectors$Species)
+
+#Reduce the number of labels for plotting reasons
+for(i in 1:nrow(pca.vectors)){
+  if(pca.vectors$X2[i]>(-0.05) & pca.vectors$X1[i]>0 & runif(1)>0.1){
+    pca.vectors$subID[i]=NA
+  } else if(pca.vectors$X2[i]>(-0.05) & pca.vectors$X1[i]<0 & runif(1)>0.5){
+    pca.vectors$subID[i]=NA
+  }
+}
+
+# for(i in 1:nrow(pca.vectors)){
+#   if(pca.vectors$X2[i]>(-0.05) & pca.vectors$X1[i]>0& runif(1)>0.5){
+#     pca.vectors$subID[i]=NA
+#   }
+# }
+
+pca_sub= ggplot(data = pca.vectors, aes(x=X1, y=X2, colour = Species)) + geom_point()+ theme_classic() + theme(axis.text.x = element_text(size=25),axis.text.y = element_text(size=25),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(10,"mm"),legend.key.height=unit(15,"mm")) + labs(x="PC1",y="PC2") + scale_color_manual(values=specolors) + ggrepel::geom_label_repel(aes(x=X1,y=X2,colour=Species,label=subID),data=pca.vectors,show.legend = F,max.overlaps=25,force=10) + guides(colour=guide_legend(override.aes=list(size=8))) + xlim(-0.3,0.1) + ylim(-0.4,0.2)
+
+plot(pca_sub)
+
+admix_plot_sub = ggplot(data = admix_df %>% mutate(ID=sub(".*2022","",ID)), aes(x=ID, y=Prop, colour = Cluster,fill=Cluster)) + geom_bar(position = "stack",stat="identity") + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(fill=F,colour=F)+facet_wrap(~Species,ncol=3,nrow=4,scales="free",labeller=label_wrap_gen(multi_line = F)) + theme(axis.text.x = element_text(size=15,angle=90),axis.text.y = element_text(size=15),axis.title.y = element_text(size=23),axis.title.x = element_text(size=23),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=16)) + labs(x="Individual",y="Admixture prop") + scale_y_continuous(expand = c(0,0))
+
+ggsave(pca_sub,filename=paste0(path_save,"PCA_mil_aspat_subset",".png"),width=14,height=10,dpi=320)
+ggsave(admix_plot_sub,filename=paste0(path_save,"Admix_amil_aspat_subset",".png"),width=18,height=10,dpi=320)
+```
+
+#PCA after removal of putative clones 
+```{r}
+list_files=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_clean.filelist.txt',col.names='file')
+list_files$ID=paste0("Aspat_",sub("_.*", "",sub(".*-","",basename(list_files$file))))
+
+clones=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_noclones.filelist.txt',col.names = c("filter"))
+
+#Same PCA after removing outliers
+cov=as.matrix(read.table(paste0(path,"GBR_aspatsamples_filt_05mis_uniq_all_chr_noclones.cov")))
+
+list_files_noclones=cbind(list_files,clones) %>% subset(filter==1)
+
+
+
+mme.pca <- eigen(cov) #perform the pca using the eigen function. 
+
+eigenvectors = mme.pca$vectors #extract eigenvectors 
+pca.vectors = cbind(data.frame(individualID=list_files_noclones$ID), data.frame(eigenvectors)) %>% merge(meta %>% dplyr::select(individualID,locationID),by="individualID") %>% merge(site_meta %>% dplyr::select(Site.name,MMM_5km),by.x="locationID",by.y="Site.name")
+
+sitecolors<-c("#1ba3c6","#2cb5c0","#FFF880","#FFE135","#C60012")
+
+perc1=round(100*mme.pca$values[1]/sum(mme.pca$values),3)
+perc2=round(100*mme.pca$values[2]/sum(mme.pca$values),3)
+perc3=round(100*mme.pca$values[3]/sum(mme.pca$values),3)
+
+pca_05mis_noclones = ggplot(data = pca.vectors, aes(x=X1, y=X2, colour = MMM_5km,group=locationID)) + geom_point(size=4,alpha=0.5)+ theme_classic() + theme(axis.text.x = element_text(size=25),axis.text.y = element_text(size=25),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(20,"mm")) + labs(x=paste0("PC1 (",as.character(perc1),"%)"),y=paste0("PC2 (",as.character(perc2),"%)"),colour="Site MMM") + scale_colour_gradientn(colours=sitecolors,limits=c(27,29),breaks=c(27,27.5,28,28.5,29)) + stat_ellipse(level=0.9) 
+
+#Second and third first component
+pca_05mis_noclones_PC23 = ggplot(data = pca.vectors, aes(x=X2, y=X3, colour = MMM_5km,group=locationID)) + geom_point(size=4,alpha=0.5)+ theme_classic() + theme(axis.text.x = element_text(size=25),axis.text.y = element_text(size=25),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(20,"mm")) + labs(x=paste0("PC2 (",as.character(perc2),"%)"),y=paste0("PC3 (",as.character(perc3),"%)"),colour="Site MMM") + scale_colour_gradientn(colours=sitecolors,limits=c(27,29),breaks=c(27,27.5,28,28.5,29)) + stat_ellipse(level=0.9) 
+
+#Same thing on no missing data
+cov=as.matrix(read.table(paste0(path,"GBR_aspatsamples_filt_uniq_all_chr_noclones.cov")))
+
+mme.pca <- eigen(cov) #perform the pca using the eigen function. 
+
+eigenvectors = mme.pca$vectors #extract eigenvectors 
+pca.vectors = cbind(data.frame(individualID=list_files_noclones$ID), data.frame(eigenvectors)) %>% merge(meta %>% dplyr::select(individualID,locationID),by="individualID") %>% merge(site_meta %>% dplyr::select(Site.name,MMM_5km),by.x="locationID",by.y="Site.name")
+
+perc1=round(100*mme.pca$values[1]/sum(mme.pca$values),3)
+perc2=round(100*mme.pca$values[2]/sum(mme.pca$values),3)
+
+pca_nomis_noclones = ggplot(data = pca.vectors, aes(x=X1, y=X2, colour = MMM_5km,group=locationID)) + geom_point(size=4,alpha=0.5)+ theme_classic() + theme(axis.text.x = element_text(size=25),axis.text.y = element_text(size=25),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(20,"mm")) + labs(x=paste0("PC1 (",as.character(perc1),"%)"),y=paste0("PC2 (",as.character(perc2),"%)"),colour="Site MMM") + scale_colour_gradientn(colours=sitecolors,limits=c(27,29),breaks=c(27,27.5,28,28.5,29)) + stat_ellipse(level=0.9) 
+
+```

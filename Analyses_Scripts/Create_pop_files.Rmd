@@ -1,0 +1,36 @@
+---
+title: "Create_population_files"
+author: "Hugo DENIS"
+date: "2024-07-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+```
+
+
+#Read sample names from vcf file 
+#Outputted using : bcftools query -l "${INDIR}aspat_clean_all_chr.vcf.gz" > "${INDIR}aspat_vcf_sample_names" 
+```{r}
+sample_name=read.table('/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/Vcf_files/aspat_vcf_sample_names',header=F,col.names="Sample")
+sample_name$eventID=sapply(strsplit(sample_name$Sample,"_"),"[[",1)
+sample_name$eventID=paste0("Aspat_",sapply(strsplit(sample_name$eventID,"-"),"[[",6))
+
+#Metadata file 
+meta=read.csv('/home/hdenis/Data/GBR_data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
+
+#Merge reef name column with the sample name
+sample_name=sample_name %>% merge(meta %>% dplyr::select(locationID,eventID),by="eventID")
+
+for(site in unique(sample_name$locationID)){
+  samp=sample_name %>% subset(locationID==site)
+  site=gsub("\\s+","",site)
+  write.table(samp %>% dplyr::select(Sample),paste0('/nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/Genome_scans/',site,'_samples'),row.names=F,col.names=F,quote=F)
+}
+```
+
