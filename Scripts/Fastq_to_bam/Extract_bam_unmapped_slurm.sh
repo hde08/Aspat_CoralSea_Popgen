@@ -24,7 +24,7 @@
 #SBATCH --ntasks-per-node=1     # use 1 for single and multi core jobs
 #SBATCH --cpus-per-task=2		# number of cores per job
 
-#SBATCH --array=1-1000%10        	# job array
+#SBATCH --array=1-6%10        	# job array
 
 ### Ressources
 
@@ -59,10 +59,15 @@ ulimit -s unlimited
 
 #6. Extract unmapped reads (non host reads) from bam files to separate files 
 
-cd /nvme/disk0/lecellier_data/WGS_GBR_data/
+cd /nvme/disk0/lecellier_data/WGS_NC_data/
 
-INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
-OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/BAM_statistics/"
+#GBR
+#INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
+#OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/BAM_statistics/"
+
+#NC
+INDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Aligned_files/"
+OUTDIR="/nvme/disk0/lecellier_data/WGS_NC_data/BAM_statistics/"
 
 #List files for which duplicates have been previoulsy removed 
 FILES=($INDIR*MARKED_DUP.bam)

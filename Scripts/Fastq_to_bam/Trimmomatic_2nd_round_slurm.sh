@@ -24,7 +24,7 @@
 #SBATCH --ntasks-per-node=1     # use 1 for single and multi core jobs
 #SBATCH --cpus-per-task=1		# number of cores per job
 
-#SBATCH --array=1-700%20        	# job array
+#SBATCH --array=1-350%20        	# job array
 
 ### Ressources
 
@@ -107,6 +107,12 @@ else
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} already processed
 
 fi
+
+
+##### 3. Run multiqc on all samples (2n trimmed round)
+multiqc "/nvme/disk0/lecellier_data/WGS_NC_data/Postqfilt_quality_check/QC_2nd_round/" -o "/nvme/disk0/lecellier_data/WGS_NC_data/Postqfilt_quality_check/QC_2nd_round/" -f -d
+
+
 
 
 #Previous Trimmomatic versions 
