@@ -14,7 +14,7 @@
 #SBATCH -t 56:00:00
 
 #MEMORY
-#SBATCH --mem=150G # RAM per job given in megabytes (M), gigabytes (G), or terabytes (T)
+#SBATCH --mem=15G # RAM per job given in megabytes (M), gigabytes (G), or terabytes (T)
 
 #Output and error directory
 #SBATCH -o /home/hdenis/Slurm/bam_stat_%A_%a.o   #Standard output 
@@ -24,7 +24,7 @@
 #SBATCH --ntasks-per-node=1     # use 1 for single and multi core jobs
 #SBATCH --cpus-per-task=2		# number of cores per job
 
-#SBATCH --array=1-6%10        	# job array
+#SBATCH --array=7-350%15        	# job array
 
 ### Ressources
 

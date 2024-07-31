@@ -24,7 +24,7 @@
 #SBATCH --ntasks-per-node=1     # use 1 for single and multi core jobs
 #SBATCH --cpus-per-task=5		# number of cores per job
 
-#SBATCH --array=1-6%6        	# job array
+#SBATCH --array=7-350%6        	# job array
 
 ### Ressources
 

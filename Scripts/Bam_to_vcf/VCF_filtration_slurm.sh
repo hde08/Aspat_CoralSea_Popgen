@@ -75,52 +75,6 @@ REF_NAME="Amilleporav3"
 CHROMOSOME_FILE="/nvme/disk0/lecellier_data/WGS_GBR_data/ANGSD_files/chromosomes_header.txt"
 CONTIG=`sed -n ${SLURM_ARRAY_TASK_ID}p $CHROMOSOME_FILE`
 
-##Create list of files to be merged 
-#N_VCF_FILES=14
-#echo -n > "${INDIR}vcf_list.txt"
-#for K in $(seq 1 $N_VCF_FILES);
-#do
-#  if (( $K < 5 )); then
-#    printf "%s\t%s\n" "${INDIR}aspat_clean_scaffold_${K}a.vcf.gz" >> "${INDIR}vcf_list.txt"
-#    printf "%s\t%s\n" "${INDIR}aspat_clean_scaffold_${K}b.vcf.gz" >> "${INDIR}vcf_list.txt"
-#    printf "%s\t%s\n" "${INDIR}aspat_clean_scaffold_${K}c.vcf.gz" >> "${INDIR}vcf_list.txt"
-#    printf "%s\t%s\n" "${INDIR}aspat_clean_scaffold_${K}d.vcf.gz" >> "${INDIR}vcf_list.txt"
-#  else
-#    printf "%s\t%s\n" "${INDIR}aspat_clean_scaffold_${K}a.vcf.gz" >> "${INDIR}vcf_list.txt"
-#    printf "%s\t%s\n" "${INDIR}aspat_clean_scaffold_${K}b.vcf.gz" >> "${INDIR}vcf_list.txt"
-#  fi
-#
-#done
-
-
-##11.1 Combine multiple VCF (per chromosome) into single VCF
-#
-#start=`date +%s`
-#echo start merging vcf files 
-#singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif gatk --java-options "-Xmx200g" GatherVcfs --INPUT "${INDIR}vcf_list.txt" --OUTPUT "${INDIR}aspat_clean_all_chr.vcf.gz" --CREATE_INDEX true 
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-#
-##Index combined file 
-#start=`date +%s`
-#echo start indexing merged file 
-#singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif gatk --java-options "-Xmx200g" IndexFeatureFile --input "${INDIR}aspat_clean_all_chr.vcf.gz"
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-#
-##11.2 Select variants (as we included monomorphic sites)
-##Output file with SNPs only
-#start=`date +%s`
-#echo start selecting SNPs 
-#singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif gatk --java-options "-Xmx200g" SelectVariants --variant "${INDIR}aspat_clean_all_chr.vcf.gz" --output "${INDIR}aspat_clean_all_chr_SNP.vcf.gz" --select-type-to-include SNP
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-#
-##Output file with INDELs only 
-#start=`date +%s`
-#echo start selecting INDELs 
-#singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif gatk --java-options "-Xmx200g" SelectVariants --variant "${INDIR}aspat_clean_all_chr.vcf.gz" --output "${INDIR}aspat_clean_all_chr_INDEL.vcf.gz" --select-type-to-include INDEL
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
 #11.3 Basic site filtering using vcftools
 

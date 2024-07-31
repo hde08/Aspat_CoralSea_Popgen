@@ -94,11 +94,9 @@ readarray -t CHROMOSOMES < "/nvme/disk0/lecellier_data/WGS_GBR_data/ANGSD_files/
 #samtools faidx $REF_3
 
 
-#10.2 Call genotypes per sample using Haplotype Caller 
-#Confirm how to list the genomic regions 
-#OPTIONS="-ERC GVCF -L ${CHROMOSOMES[@]}"
+#10.2 Call genotypes per sample using Haplotype Caller gatk v4.5.0.0
 
-#Try on complete reference genome (not only chromosomes)
+#Genotype calling on complete reference (chr + scaffolds)
 OPTIONS="-ERC GVCF"
 
 if [ ! -s "$OUTDIR$BASE.g.vcf.gz" ] 
@@ -107,10 +105,7 @@ then
   start=`date +%s`
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} : start processing
   
-  gatk HaplotypeCaller --input $FILE --output "$OUTDIR$BASE.g.vcf.gz" --reference $REF_3 $OPTIONS
-  
-  #Reblock outputted gvcf to speed up following steps -> Don't use this option 
-#  singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif gatk --java-options "-Xmx10g" ReblockGVCF -R $REF_3 -V "$OUTDIR$BASE.g.vcf.gz" -O "$OUTDIR$BASE.rb.g.vcf.gz"
+  singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif gatk --java-options "-Xmx8g" HaplotypeCaller --input $FILE --output "$OUTDIR$BASE.g.vcf.gz" --reference $REF_3 $OPTIONS
   
   end=`date +%s`
   echo ${BASE} : Execution time was `expr $(( ($end - $start) / 60))` minutes.
@@ -120,10 +115,6 @@ else
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} already processed
 
 fi
-
-
-#Get some help 
-#gatk HaplotypeCaller  --h
 
 #Validate format 
 #gatk ValidateVariants -V /nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/RRAP-ECT01-2022-Aspat-CBHE-1718_L1_pe_aln_Amilleporav3.g.vcf.gz --validation-type-to-exclude ALL

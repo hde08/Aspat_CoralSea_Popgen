@@ -81,7 +81,7 @@ BASE=$(basename $FILENAME)
 BASE=${BASE%%_U*}
 
 #Load correct java version (>= java v17)
-#ml load gcc-11.4.1/jdk/17.0.2_openjdk-rplh5ry
+ml load gcc-11.4.1/jdk/17.0.2_openjdk-rplh5ry
 
 if [ ! -s "${INDIR}${BASE}_MARKED_DUP.bam" ] 
 then
@@ -96,16 +96,20 @@ then
   BASE_REP="${BASE#*-}"
   BASE_REP=$(ls /tgt_bck2/data_lecellier/BAM_files/  | grep $BASE)
   BASE_REP=${BASE%%.u*}
+  echo RRAP sample : ${BASE_REP}
   
-  singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif AddOrReplaceReadGroups INPUT="${INDIR}${BASE}_UNDEDUP.bam" OUTPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" RGID=$(echo ${BASE_REP} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/") RGLB=$(echo ${BASE_REP} | cut -d"-" -f1,2,3) RGPL=ILLUMINA RGPU=$(echo ${BASE_REP} | cut -d"_" -f2) RGSM=$(echo ${BASE_REP} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/")
+  /home/hdenis/Programs/gatk-4.5.0.0/gatk AddOrReplaceReadGroups INPUT="${INDIR}${BASE}_UNDEDUP.bam" OUTPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" RGID=$(echo ${BASE_REP} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/") RGLB=$(echo ${BASE_REP} | cut -d"-" -f1,2,3) RGPL=ILLUMINA RGPU=$(echo ${BASE_REP} | cut -d"_" -f2) RGSM=$(echo ${BASE_REP} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/")
   
-  else if echo ${BASE} | grep -q 'RA-'; then
+  elif echo ${BASE} | grep -q 'RA-'; then
     #NC - Reef Adapt samples
-    singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif AddOrReplaceReadGroups INPUT="${INDIR}${BASE}_UNDEDUP.bam" OUTPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" RGID=${BASE} RGLB="RECOVER_2023" RGPL=ILLUMINA RGPU="L1" RGSM=${BASE}
+    echo RA sample
+    
+    /home/hdenis/Programs/gatk-4.5.0.0/gatk AddOrReplaceReadGroups INPUT="${INDIR}${BASE}_UNDEDUP.bam" OUTPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" RGID=${BASE} RGLB="RECOVER_2023" RGPL=ILLUMINA RGPU="L1" RGSM=${BASE}
       
   else
+    echo Recover sample 
     #NC - Recover samples 
-    singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif AddOrReplaceReadGroups INPUT="${INDIR}${BASE}_UNDEDUP.bam" OUTPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" RGID=${BASE} RGLB="REEF_ADAPT_2021" RGPL=ILLUMINA RGPU="L1" RGSM=${BASE}
+    /home/hdenis/Programs/gatk-4.5.0.0/gatk AddOrReplaceReadGroups INPUT="${INDIR}${BASE}_UNDEDUP.bam" OUTPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" RGID=${BASE} RGLB="REEF_ADAPT_2021" RGPL=ILLUMINA RGPU="L1" RGSM=${BASE}
   fi
 
   #RGID : unique read group identifier
@@ -115,12 +119,13 @@ then
   #RGSM : sample name (=RGID in this case)
   
   #5.2 Mark and remove duplicate
-  singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif MarkDuplicates INPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" OUTPUT="${INDIR}${BASE}_MARKED_DUP.bam" METRICS_FILE="${OUTDIR}${BASE}_marked_dup_metrics.txt" REMOVE_DUPLICATES=true TMP_DIR="${INDIR}" VALIDATION_STRINGENCY=LENIENT
+  /home/hdenis/Programs/gatk-4.5.0.0/gatk MarkDuplicates INPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" OUTPUT="${INDIR}${BASE}_MARKED_DUP.bam" METRICS_FILE="${OUTDIR}${BASE}_marked_dup_metrics.txt" REMOVE_DUPLICATES=true TMP_DIR="${INDIR}" VALIDATION_STRINGENCY=LENIENT
   
   end=`date +%s`
   echo ${BASE} : Execution time was `expr $(( ($end - $start) / 60))` minutes.
   
   rm "${INDIR}${BASE}_UNDEDUP_RG.bam"
+  rm "${INDIR}${BASE}_UNDEDUP.bam"
 
 else
 

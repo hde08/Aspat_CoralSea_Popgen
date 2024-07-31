@@ -200,24 +200,35 @@ group2$ID=paste0(sub("_.*", "",sub(".*2022-","",basename(group2$file))))
 ```
 
 
-#Perform hierarchical clustering
+#Perform hierarchical clustering 1st group
 ```{r}
 mat1=relat %>% subset(ID1 %in% group1$ID & ID2 %in% group1$ID)
 mat1=mat1[,c("ID1","ID2","RELATEDNESS_AJK")]
-mat1=dcast(mat1,ID1~ID2,drop=F)
+mat1=dcast(mat1,ID1~ID2,drop=T)
 mat1=data.frame(mat1)
-rownames(mat1)=mat1$ID1
+rownames(mat1)=mat1[,1]
 mat1=mat1[,-1]
+#Convert upper triangle matrix to lower triangle
+mat1=as.matrix(mat1)
+mat1[lower.tri(mat1)]=t(mat1)[lower.tri(mat1)]
 colnames(mat1)=rownames(mat1)
 
+#Replace NA values (don't know why they occur for technical replicates)
+for(i in 1:nrow(mat1)){
+  for(j in 1:ncol(mat1)){
+    if(is.na(mat1[i,j])){
+      rowname=rownames(mat1)[i]
+      colname=colnames(mat1)[j]
+      mat1[i,j]=(relat %>% subset(ID1==rowname & ID2==colname | ID2==rowname & ID1==colname))$RELATEDNESS_AJK
+    }
+  }
+}
+
+#Convert simmilarity to dissimilarity matrix 
 mat1=1-mat1
 
-mat1[lower.tri(mat1)]=t(mat1[upper.tri(mat1)])
 
-mat1=mat1[1:423,1:423]
-#Reverse order of metric such as closest individuals as the smallest distance
-
-hc1=hclust(dist(as.matrix(mat1)),method="average") %>% as.dendrogram()
+hc1=hclust(as.dist(mat1),method="average") %>% as.dendrogram()
 
 #Get average technical replicate threshold
 replicate_threshold=max(mat1[cl1[2],cl1[1]],mat1[cl2[2],cl2[1]])
@@ -232,7 +243,7 @@ mat_clones=mat1 %>% replace(.,col(.)==row(.),NA)
 min=apply(mat_clones,2,function(x)min(x,na.rm=T))
 clones_labels=labels(hc1)
 min=min[order(match(names(min),clones_labels))]
-names(min)[min>0.2]=""
+names(min)[min>0.35]=""
 clones_labels=names(min)
 
 # 
@@ -254,10 +265,60 @@ for(i in 2:length(clones_labels)){
 library(dendextend)
 png(paste0(outpath,"Group1_relatedness_dendogram.png"),width=2000,height=1000,res=400)
 par(mar=c(4,2.1,0.5,0.5))
-hc1 %>% dendextend::set("labels",clones_labels) %>% dendextend::set("labels_cex",0.2) %>% dendextend::hang.dendrogram() %>% dendextend::assign_values_to_leaves_edgePar(value=clones_color,edgePar="col") %>% dendextend::set("branches_lwd",0.5)  %>% plot(ylim=c(0.7,1.5),yaxt="n")
+hc1 %>% dendextend::set("labels",clones_labels) %>% dendextend::set("labels_cex",0.2) %>% dendextend::hang.dendrogram() %>% dendextend::assign_values_to_leaves_edgePar(value=clones_color,edgePar="col") %>% dendextend::set("branches_lwd",0.5)  %>% plot(ylim=c(-0.02,1.1),yaxt="n")
 # hc1 %>% dendextend::set("labels",clones_labels) %>% dendextend::set("labels_cex",0.2) %>% dendextend::hang.dendrogram() %>% dendextend::assign_values_to_leaves_edgePar(value=clones_color,edgePar="col") %>% dendextend::set("branches_lwd",0.5)  %>% plot(ylim=c(0,1),yaxt="n")
 abline(h=replicate_threshold,col="red",lty=3)
 axis(2,cex.axis=0.5)
 dev.off()
+```
+
+#Second group
+```{r}
+mat2=relat %>% subset(ID1 %in% group2$ID & ID2 %in% group2$ID)
+mat2=mat2[,c("ID1","ID2","RELATEDNESS_AJK")]
+mat2=dcast(mat2,ID1~ID2,drop=T)
+mat2=data.frame(mat2)
+rownames(mat2)=mat2[,1]
+mat2=mat2[,-1]
+#Convert upper triangle matrix to lower triangle
+mat2=as.matrix(mat2)
+mat2[lower.tri(mat2)]=t(mat2)[lower.tri(mat2)]
+colnames(mat2)=rownames(mat2)
+
+mat2=1-mat2
+
+
+hc2=hclust(as.dist(mat2),method="average") %>% as.dendrogram()
+
+#Only show labels of samples with high similarity 
+mat_clones=mat2 %>% replace(.,col(.)==row(.),NA)
+min=apply(mat_clones,2,function(x)min(x,na.rm=T))
+clones_labels=labels(hc2)
+min=min[order(match(names(min),clones_labels))]
+names(min)[min>0.3]=""
+clones_labels=names(min)
+
+#Prevent overlap of labels
+for(i in 2:length(clones_labels)){
+  if(clones_labels[i-1]!="" & clones_labels[i]!=""){
+    clones_labels[i]=paste0(clones_labels[i-1],"\n",clones_labels[i])
+    clones_labels[i-1]=""
+  }
+}
+
+
+library(dendextend)
+png(paste0(outpath,"Group2_relatedness_dendogram.png"),width=2000,height=1000,res=400)
+par(mar=c(4,2.1,0.5,0.5))
+hc2 %>% dendextend::set("labels",clones_labels) %>% dendextend::set("labels_cex",0.2) %>% dendextend::hang.dendrogram() %>% dendextend::assign_values_to_leaves_edgePar(value=clones_color,edgePar="col") %>% dendextend::set("branches_lwd",0.5)  %>% plot(ylim=c(-0.02,1.1),yaxt="n")
+# hc1 %>% dendextend::set("labels",clones_labels) %>% dendextend::set("labels_cex",0.2) %>% dendextend::hang.dendrogram() %>% dendextend::assign_values_to_leaves_edgePar(value=clones_color,edgePar="col") %>% dendextend::set("branches_lwd",0.5)  %>% plot(ylim=c(0,1),yaxt="n")
+abline(h=replicate_threshold,col="red",lty=3)
+axis(2,cex.axis=0.5)
+dev.off()
+```
+
+#Make single graph with both method plotted together 
+```{r}
+
 ```
 

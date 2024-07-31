@@ -62,8 +62,7 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-#10.3 Consolidate GVCF using GenomicsDBImport
-#This step can be parallelized across all the contigs 
+##10.4 Perform joint genotyping with Genotype GVCF
 
 cd /nvme/disk0/lecellier_data/WGS_GBR_data/
 INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/"
@@ -73,23 +72,8 @@ OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/Vcf_files/"
 REF_3="/nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/Amil_scaffolds_final_v3.fa"
 REF_NAME="Amilleporav3"
 
-##10.4 Perform joint genotyping with Genotype GVCF
-#This version of the script is very long to run : try alternate version below 
 
-##Associate slurm array index with contig (chr) name 
-#CHROMOSOME_FILE="/nvme/disk0/lecellier_data/WGS_GBR_data/ANGSD_files/chromosomes_header.txt"
-#CONTIG=`sed -n ${SLURM_ARRAY_TASK_ID}p $CHROMOSOME_FILE`
-#
-#start=`date +%s`
-#echo Array Id : ${SLURM_ARRAY_TASK_ID} Chromosome : ${CONTIG} : start joint genotyping
-##cd ${INDIR}GenomicDB/
-#singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif gatk --java-options "-Xmx240g" GenotypeGVCFs -R $REF_3 -V "gendb://${INDIR}GenomicDB/${CONTIG}" -O "${OUTDIR}aspat_clean_${CONTIG}.vcf.gz" --tmp-dir /nvme/disk0/lecellier_data/WGS_GBR_data/tmp --include-non-variant-sites true -L $CONTIG
-#end=`date +%s`
-#echo ${CONTIG} : Execution time was `expr $(( ($end - $start) / 60))` minutes.
-
-### New version to run faster ###
-
-#Create a list of intervals to speed-up the computation (total of 36 intervals)
+#10.41 Read from a list of intervals  (total of 36 intervals)
 #Chromosomes 1-4 divided in 4 intervals
 #Chromosomes 5-14 divided in 2 inverals 
 INTERVALS_FILE="/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/chromosome_intervals.txt"
@@ -109,14 +93,12 @@ CONTIG_NAME=${INTERVALS_NAMES[$((${SLURM_ARRAY_TASK_ID}-1))]}
 
 start=`date +%s`
 echo Array Id : ${SLURM_ARRAY_TASK_ID} Chromosome : ${CONTIG} : start joint genotyping
-#cd ${INDIR}GenomicDB/
+
 singularity exec --bind /nvme/disk0/lecellier_data:/nvme/disk0/lecellier_data /home/hdenis/gatk_latest.sif gatk --java-options "-Xmx58g" GenotypeGVCFs -R $REF_3 -V "gendb://${INDIR}GenomicDB/${CONTIG_NAME}" -O "${OUTDIR}aspat_clean_${CONTIG_NAME}.vcf.gz" --tmp-dir /nvme/disk0/lecellier_data/WGS_GBR_data/tmp --include-non-variant-sites true -L $CONTIG --only-output-calls-starting-in-intervals true
+
 end=`date +%s`
 echo ${CONTIG} : Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
-
-#Version without docker install 
-#gatk --java-options "-Xmx4g" GenotypeGVCFs -R $REF_3 -V "gendb://${CONTIG}" -O "${OUTDIR}aspat_clean_${CONTIG}.vcf.gz" --include-non-variant-sites --tmp-dir /nvme/disk0/lecellier_data/WGS_GBR_data/tmp
 
 #Check changes in variants processed over time 
 #cat /home/hdenis/Slurm/gatk_7338_1.e | grep 'ProgressMeter' > /nvme/disk0/lecellier_data/WGS_GBR_data/Vcf_performance.txt
