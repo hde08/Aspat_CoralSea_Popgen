@@ -22,7 +22,7 @@
 1 GATK_HaplotypeCaller_slurm.sh > per sample variant calling (using complete reference chromosomes + scaffolds)  
 2 GATK_GenomicsDBimport_slurm.sh > Create genomic database (chromosomes only, split by 4 or 2 intervals depending on size)  
 3 GATK_GenotypeGVCFs_slurm.sh > joint genotyping across all samples (per intervals)  
-4 GATK_GatherVCFs_SelectVariants_slurm.sh > Combine intervals vcf files and select variants 
+4 GATK_GatherVCFs_SelectVariants_slurm.sh > Combine intervals vcf files and select variants   
 5 VCF_filtration_slurm.sh > Filter final vcf by variants, genotypes and individuals 
 
 ### 3. Other Analyses scripts.
