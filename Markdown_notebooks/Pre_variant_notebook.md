@@ -18,6 +18,8 @@
     fastqc --noextract --outdir "Initial_quality_check/" "${INDIR}${BASE}_R2_paired.fastq.gz" --threads 1
     multiqc "${INDIR}" -o "${OUTDIR}" -f -d
 
+
+
 ||GBR| NC|
 |----|----|----|----|
 | N initial samples collected| 831 |303
@@ -45,6 +47,8 @@
     java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}${BASE}_sum.txt" "${INDIR}${BASE}_1.fastq.gz" "${INDIR}${BASE}_2.fastq.gz" "${OUTDIR}${BASE}_R1_paired.fastq.gz" "${OUTDIR}${BASE}_R1_unpaired.fastq.gz" "${OUTDIR}${BASE}_R2_paired.fastq.gz" "${OUTDIR}${BASE}_R2_unpaired.fastq.gz" ILLUMINACLIP:/nvme/disk0/lecellier_data/WGS_NC_data/Illumina_adapters_Iva_version.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50
     fastqc --noextract --outdir "Postqfilt_quality_check/" "${OUTDIR}${BASE}_R1_paired.fastq.gz" --threads 1
     fastqc --noextract --outdir "Postqfilt_quality_check/" "${OUTDIR}${BASE}_R2_paired.fastq.gz" --threads 1 
+
+
 
 ||GBR| NC|
 |----|----|----|----|
@@ -84,6 +88,7 @@
      /home/hdenis/Programs/gatk-4.5.0.0/gatk MarkDuplicates INPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" OUTPUT="${INDIR}${BASE}_MARKED_DUP.bam" METRICS_FILE="${OUTDIR}${BASE}_marked_dup_metrics.txt" REMOVE_DUPLICATES=true TMP_DIR="${INDIR}" VALIDATION_STRINGENCY=LENIENT
     
    
+
    ||GBR| NC|
 |----|----|----|----|
 | Number of samples used as input | 908 |344
@@ -109,6 +114,9 @@
     samtools view -F12 "${INDIR}${BASE}_MARKED_DUP.bam" | cut -f 10 | perl -ne 'chomp;print length($_) . "\n"' | sort | uniq -c > "${OUTDIR}${BASE}-readlenghts.txt" 
 
 Average statistics for BAM files that passed the prior filters :
+
+
+
 ||GBR| NC|
 |----|----|----|----|
 | Number of samples used to compute statistics | 903 |316
