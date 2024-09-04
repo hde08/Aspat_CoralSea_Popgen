@@ -19,7 +19,7 @@
     multiqc "${INDIR}" -o "${OUTDIR}" -f -d
 
 ||GBR| NC|
-|--|--|--|--|
+|----|----|----|----|
 | N initial samples collected| 831 |303
 | N initial samples sequenced| 830 |194
 | N natural bleaching samples| 0 |20
@@ -47,7 +47,7 @@
     fastqc --noextract --outdir "Postqfilt_quality_check/" "${OUTDIR}${BASE}_R2_paired.fastq.gz" --threads 1 
 
 ||GBR| NC|
-|--|--|--|--|
+|----|----|----|----|
 | Number of samples used as input | 912 |344
 | Number of reads after reads quality filtering| 29.8*10^9 |14.20*10^9
 | **Number of samples kept after >10M reads filtering**| **908** |**344**
@@ -85,7 +85,7 @@
     
    
    ||GBR| NC|
-|--|--|--|--|
+|----|----|----|----|
 | Number of samples used as input | 908 |344
 | Number of reads after filtering for PCR and optical duplicates| 25.3*10^9 |10.5*10^9
 | Number of reads that mapped| 24.3*10^9 |97.3*10^8
@@ -110,7 +110,7 @@
 
 Average statistics for BAM files that passed the prior filters :
 ||GBR| NC|
-|--|--|--|--|
+|----|----|----|----|
 | Number of samples used to compute statistics | 903 |316
 | Base quality all| 35.6 |39.4
 | Base quality chr| 36.0 |39.5
