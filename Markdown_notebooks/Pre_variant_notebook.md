@@ -37,12 +37,12 @@
 **Trimmomatic v0.39**
 > Trimmomatic_slurm.sh
 
-*Parameters:*
-*#adapters.fa:2:30:10:4:true* -> clip adapters using 'palindrome mode'   
-*#LEADING:3* -> remove leading low quality bases below quality 3  
-*#TRAILING:3* -> remove trailing low quality bases below quality 3  
-*#SLIDINGWINDOW:4:20* -> 4 bp sliding window and min phred score quality 20  
-*#MINLEN:50* -> trim adapters   
+*Parameters:*    
+*#adapters.fa:2:30:10:4:true -> clip adapters using 'palindrome mode'*     
+*#LEADING:3 -> remove leading low quality bases below quality 3*   
+*#TRAILING:3 -> remove trailing low quality bases below quality 3*    
+*#SLIDINGWINDOW:4:20 -> 4 bp sliding window and min phred score quality 20*    
+*#MINLEN:50 -> trim adapters*     
 
     java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}${BASE}_sum.txt" "${INDIR}${BASE}_1.fastq.gz" "${INDIR}${BASE}_2.fastq.gz" "${OUTDIR}${BASE}_R1_paired.fastq.gz" "${OUTDIR}${BASE}_R1_unpaired.fastq.gz" "${OUTDIR}${BASE}_R2_paired.fastq.gz" "${OUTDIR}${BASE}_R2_unpaired.fastq.gz" ILLUMINACLIP:/nvme/disk0/lecellier_data/WGS_NC_data/Illumina_adapters_Iva_version.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50
     fastqc --noextract --outdir "Postqfilt_quality_check/" "${OUTDIR}${BASE}_R1_paired.fastq.gz" --threads 1
@@ -60,8 +60,8 @@
 **Bwa mem v0.7.17**
 > Bwa_mem_slurm_v2.sh
 
-*Parameters:*
-*Default parameters  *
+*Parameters:*  
+*Default parameters*  
 
     bwa mem -t 5 ${REF_3} -o "${OUTDIR}${BASE}_pe_aln_${REF_NAME}.sam" "${INDIR}${BASE}_R1_paired.fastq.gz" "${INDIR}${BASE}_R2_paired.fastq.gz" 
     samtools view -b --threads 5 "${OUTDIR}${BASE}_pe_aln_${REF_NAME}.sam" | samtools sort --threads 5  -O BAM -o "${OUTDIR}${BASE}_pe_aln_${REF_NAME}_UNDEDUP.bam"
@@ -72,14 +72,14 @@
    > picard_slurm.sh
    > Extract_bam_unmapped_slurm.sh
  
- *Parameters:*
- *#RGID : unique read group identifier  *
-  *#RGLB : library index  *
-  *#RGPL : platform name  *
-  *#RGPU : flowcell, lane, sample barcode  * 
-  *#RGSM : sample name (=RGID in this case)  *
-  *#VALIDATION_STRINGENCY=LENIENT  *
- *#REMOVE_DUPLICATES=true  * 
+ *Parameters:*  
+ *#RGID : unique read group identifier*  
+  *#RGLB : library index*  
+  *#RGPL : platform name*  
+  *#RGPU : flowcell, lane, sample barcode*   
+  *#RGSM : sample name (=RGID in this case)*  
+  *#VALIDATION_STRINGENCY=LENIENT*  
+ *#REMOVE_DUPLICATES=true*   
 
     #Add Read Group
     /home/hdenis/Programs/gatk-4.5.0.0/gatk AddOrReplaceReadGroups INPUT="${INDIR}${BASE}_UNDEDUP.bam" OUTPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" RGID=$(echo ${BASE_REP} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/") RGLB=$(echo ${BASE_REP} | cut -d"-" -f1,2,3) RGPL=ILLUMINA RGPU=$(echo ${BASE_REP} | cut -d"_" -f2) RGSM=$(echo ${BASE_REP} | cut -d"_" -f1 | sed "s/RRAP-.*-202.*-A/A/")
@@ -102,8 +102,8 @@
 > BAM_statistics_slurm.sh
 
  *Parameters:*
- *#-f 12 extract only the reads when both paired reads are unmapped  
- *#-F 256 discard secondary alignments  
+ *#-f 12 extract only the reads when both paired reads are unmapped*    
+ *#-F 256 discard secondary alignments*    
   
 
     # generate sample names
