@@ -14,7 +14,7 @@
 6 BAM_statistics_slurm.sh > Generate statistics on raw sequence, quality, mapping, coverage etc. 
 7 ANGSD.sh > Generate beagle file for population genetics analyses using genotype likelihoods 
 
-### 1. Bam_to_vcf
+### 2. Bam_to_vcf
 ### Personal scripts for SNPs and variant hard calling
 ### Following GATK 'Best practices' 
 ### https://gatk.broadinstitute.org/hc/en-us/articles/360035535932-Germline-short-variant-discovery-SNPs-Indels
@@ -25,10 +25,15 @@
 4 GATK_GatherVCFs_SelectVariants_slurm.sh > Combine intervals vcf files and select variants   
 5 VCF_filtration_slurm.sh > Filter final vcf by variants, genotypes and individuals 
 
-### 3. Other Analyses scripts.
-### Various scripts for population demographics, connectivity, diversity inference and GEAs/GWAS
+### 3. Popgen_angsd
+### Scripts to have a preliminary look at the data using a genotype likelihood framework : asesss population structure, sort-out taxa mis-identification and identify putative clones.
 
+### 4. Popgen_vcf
+### Scripts to conduct final population genetics analyses presented in the manuscript using 'hard called' variants. 
 
+###5. Symbionts
+### Scripts to analyze symbiont communities composition and diversity from hologenome reads. 
+### Some modified from Hisatake Ishida custom scripts : https://github.com/hisatakeishida/Symb-SHIN
 
 
 
