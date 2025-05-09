@@ -1,0 +1,1311 @@
+---
+title: "Pop_struct_connectivity"
+author: "Hugo DENIS"
+date: "2024-07-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Packages
+```{r}
+library(openxlsx)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(tidyr)
+library(cowplot)
+library(data.table)
+library(geosphere)
+library(ape)
+library(ggtree)
+library(ggnewscale)
+library(scatterpie)
+```
+
+#Load metadata 
+```{r}
+path="C:/Users/Hugo/Documents/Data/Genomics/"
+figpath="C:/Users/Hugo/Documents/Figures/Genomics/"
+
+# path="/nvme/disk0/lecellier_data/WGS_GBR_NC_data/"
+# figpath="/home/hdenis/Coral-Genomics/Figures/Pop_genetics_plots/"
+  
+meta_colony=read.table("C:/Users/Hugo/Documents/Data/Colony_metadata_Aspat_GBR_NC.txt",header=T,sep="\t")
+  
+meta_site=openxlsx::read.xlsx("C:/Users/Hugo/Documents/Data/Summary_PhD_sites.xlsx",sheet = "Sheet 1")
+
+# meta_colony=read.table("/home/hdenis/Data/Colony_metadata_Aspat_GBR_NC.txt",sep=",",header=T)
+# meta_site=openxlsx::read.xlsx("/home/hdenis/Data/Summary_PhD_sites.xlsx",sheet = "Sheet 1")
+```
+
+```{r}
+summary=read.xlsx("C:/Users/Hugo/Documents/Documents/CoC/Summary_sites_AUS_NC.xlsx",sheet="Summary_sites_AUS_NC")
+
+meta_col_sum=meta_colony %>% group_by(locationID) %>% dplyr::summarize(min_depth=min(Depth_corrected,na.rm=T),max_depth=max(Depth_corrected,na.rm=T),mean=round(mean(Depth_corrected,na.rm=T),1))
+
+summary=summary %>% merge(meta_colony %>% distinct(locationID,.keep_all = T) %>% dplyr::select(locationID,Site.code,Date),by.x="Site.name",by.y="locationID") %>% merge(meta_col_sum,by.x="Site.name",by.y="locationID")
+
+write.xlsx(summary,"C:/Users/Hugo/Documents/Documents/CoC/Summary_sites_AUS_NC_2nd_manuscript.xlsx")
+```
+
+
+
+#Load Genomic data
+```{r}
+#NJ tree for GBR + NC subset based on hamming distance
+nj_hamming=read.nexus(paste0(path,"NJtree/gbr_nc_aspat_amil_phylo_subset_all_chr_SNP_filtered_2_05mis_mac3_HWP001_LD_MAF_hammingdist.nex"))
+
+#NJ-tree for all GBR + NC samples 
+nj_hamming=read.nexus(paste0(path,"NJtree/aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70_hammingdist.nex"))
+
+#Edit tip labels to short format 
+nj_hamming$tip.label=sub(".*Aspat-","",nj_hamming$tip.label)
+nj_hamming$tip.label=sub("_.*","",nj_hamming$tip.label)
+
+#Samples group assignment 
+pop=read.table(paste0(path,"NJtree/gbr_nc_aspat_amil_phylo_subset_Group1234_popfile.txt"),col.names=c("sample","Group"))
+pop=read.table(paste0(path,"NJtree/aspat_clean_filtered2_Group1234_noclones.filelist.txt"),col.names=c("sample","Group"))
+
+```
+
+#Plot NJ-tree
+```{r}
+nj_hamming <- drop.tip(nj_hamming, c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4"))
+
+#Add pop information to the tree
+pop$sample=sub(".*Aspat-","",pop$sample)
+pop$sample=sub("_.*","",pop$sample)
+nj_hamming <- groupOTU(nj_hamming, split(pop$sample,pop$Group))
+
+nj_hamming_tree=ggtree(nj_hamming ,aes(colour=group),size=1) +theme_tree()+theme(legend.key.size = unit(5,"line"),legend.key.width = unit(3,"line"),legend.text=element_text(size=22,color="black"),legend.title=element_text(face = "bold",hjust=0.1,size=25),legend.margin = margin(t = 0, r = 10, b = 0, l = 0),plot.background = element_rect(fill="white",color="transparent"),panel.background = element_rect(fill="transparent",color="transparent")) + scale_color_manual(values=group_colors)+ guides(color="none")
+
++ geom_tiplab()
+
+group_colors=c("#016765","#079CEF","#FFCC33","#CC791E")
+names(group_colors)=c("Group3","Group4","Group2","Group1")
+
+nj_hamming_tree=ggplot(nj_hamming)
+#Retrieve Group nodes to highlight tree
+pop_rect=data.frame(Group=c("Group1","Group2","Group4","Group3")) %>% mutate(xmin=rep(-0.002,4),xmax=rep(0.125,4),ymin=c(0.5,11.5,22.5,33.5),ymax=c(11.5,22.5,33.5,44.5))
+
+pop_rect=data.frame(Group=c("Group1","Group2","Group4","Group3")) %>% mutate(xmin=rep(-0.002,4),xmax=rep(0.125,4),ymin=c(0.5,70.5,140.5,210.5),ymax=c(71.5,141.5,211.5,281.5))
+
+group_color=data.frame(Group=c("Group3","Group4","Group2","Group1"),color=c("#016765","#079CEF","#FFCC33","#CC791E"))
+pop_rect=pop_rect %>% merge(group_color,by="Group")
+
+#Add groups rectanlge in the background
+for(i in 1:nrow(pop_rect)){
+  nj_hamming_tree=nj_hamming_tree+annotate("rect",xmin=pop_rect$xmin[i],xmax=pop_rect$xmax[i],ymin=pop_rect$ymin[i],ymax=pop_rect$ymax[i],fill=pop_rect$color[i],alpha=0.6)
+}
+
+#Add rest of theme modifications
+ nj_hamming_tree= nj_hamming_tree +geom_tree(color="black",size=1.2)+geom_tiplab( align=TRUE, size=5, linesize=.3,colo="black")+theme_tree()+theme(legend.key.size = unit(5,"line"),legend.key.width = unit(3,"line"),legend.text=element_text(size=22,color="black"),legend.title=element_text(face = "bold",hjust=0.1,size=25),legend.margin = margin(t = 0, r = 10, b = 0, l = 0),plot.background = element_rect(fill="white",color="transparent"),panel.background = element_rect(fill="transparent",color="transparent")) 
+ 
+  nj_hamming_tree= nj_hamming_tree +geom_tree(color="black",size=1.2)+theme_tree()+theme(legend.key.size = unit(5,"line"),legend.key.width = unit(3,"line"),legend.text=element_text(size=22,color="black"),legend.title=element_text(face = "bold",hjust=0.1,size=25),legend.margin = margin(t = 0, r = 10, b = 0, l = 0),plot.background = element_rect(fill="white",color="transparent"),panel.background = element_rect(fill="transparent",color="transparent")) 
+
+#ggsave(nj_hamming_tree ,filename=paste0(figpath,"NJtree/NJ_tree_Hamming_dist_GBR_NC_phylo_subset.png"),height=14,width=12,dpi=500)
+
+ggsave(nj_hamming_tree ,filename=paste0(figpath,"NJtree/NJ_tree_Hamming_dist_aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70.png"),height=14,width=12,dpi=500)
+```
+
+#Plot RAxML tree
+```{r}
+miss="20"
+
+#RAxML tree for a subset of 70 samples per group 
+bootstrap_file <- paste0(path, "RAxML/RAxML_bipartitions.aspat_clean_all_chr_SNP_filtered_2_", miss, "mis_noclones_recoded_MAF0.05_LD0.2_subsample70_final_tree_GAMMA")
+
+rerooted_bootstrap_file<-paste0(path, "RAxML/RAxML_bipartitions.aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70_final_tree_GAMMA_rerooted.nwk")
+
+tree_file <- paste0(path, "RAxML/RAxML_bestTree.aspat_clean_all_chr_SNP_filtered_2_", miss, "mis_noclones_recoded_MAF0.05_LD0.2_subsample70_ML_tree")
+
+# raxml <- drop.tip(raxml, c("OCDA-1572","FITZ-1698"))
+
+raxml=read.tree(tree_file)
+bootstrap_tree <- read.tree(bootstrap_file)
+
+# Add bootstrap values to the `raxml` tree as a `node.label` attribute
+raxml$node.label <- as.numeric(bootstrap_tree$node.label)
+raxml$node.label[raxml$node.label<80]=""
+raxml$node.label[is.na(raxml$node.label)]=""
+
+#Edit tip labels to short format 
+raxml$tip.label=sub(".*Aspat-","",raxml$tip.label)
+raxml$tip.label=sub("_.*","",raxml$tip.label)
+#raxml <- drop.tip(raxml, c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4"))
+
+
+#Samples group assignment 
+pop=read.table(paste0(path,"NJtree/aspat_clean_filtered2_Group1234_noclones.filelist.txt"),col.names=c("sample","Group"))
+pop$sample=sub(".*Aspat-","",pop$sample)
+pop$sample=sub("_.*","",pop$sample)
+pop=pop %>% rbind(data.frame(sample="OCCH-992",Group="Group1"))
+
+#Plot the tree 
+raxml <- groupOTU(raxml, split(pop$sample,pop$Group))
+group_colors=c("#016765","#079CEF","#FFCC33","#CC791E")
+names(group_colors)=c("Group3","Group4","Group2","Group1")
+
+raxml_tree=ggtree(raxml ,aes(colour=group),size=1) +theme_tree()+theme(legend.key.size = unit(5,"line"),legend.key.width = unit(3,"line"),legend.text=element_text(size=22,color="black"),legend.title=element_text(face = "bold",hjust=0.1,size=25),legend.margin = margin(t = 0, r = 10, b = 0, l = 0),plot.background = element_rect(fill="white",color="transparent"),panel.background = element_rect(fill="transparent",color="transparent")) + scale_color_manual(values=group_colors)+ guides(color="none")+ geom_tiplab()+ geom_nodelab(aes(label=label),color="black",size=3)
+
+
+ggsave(raxml_tree ,filename=paste0(figpath,"RAxML/RAxML_tree_aspat_clean_all_chr_SNP_filtered_2_",miss,"mis_noclones_recoded_MAF0.05_LD0.2_subsample70_ML_tree_v3.png"),height=14,width=12,dpi=500)
+
+
+#Plot bootstrap tree
+#The tree was previously rerooted in FigTree v1.4.4
+rerooted_bootstrap_tree <- read.tree(rerooted_bootstrap_file) 
+
+rerooted_bootstrap_tree$tip.label=sub(".*Aspat-","",rerooted_bootstrap_tree$tip.label)
+rerooted_bootstrap_tree$tip.label=sub("_.*","",rerooted_bootstrap_tree$tip.label)
+
+ggtree(rerooted_bootstrap_tree) + geom_nodelab(aes(label=node),color="black",size=5,font="bold",hjust=-0.2)
+
+#Add bootstrap values manually as they have been changed by rerooting (read from figtree)
+rerooted_bootstrap_tree$node.label=rep("",267)
+rerooted_bootstrap_tree$node.label[2]=98
+rerooted_bootstrap_tree$node.label[70]=94
+rerooted_bootstrap_tree$node.label[69]=98
+rerooted_bootstrap_tree$node.label[139]=99
+
+rerooted_bootstrap_tree <- drop.tip(rerooted_bootstrap_tree , c("CBHE-1736","CBHE-1776","CBLM-1600","CBLM-1655","CB3-8"))
+
+
+
+
+#Group by original population 
+rerooted_bootstrap_tree<- groupOTU(rerooted_bootstrap_tree, split(pop$sample,pop$Group))
+
+boot_tree=ggtree(rerooted_bootstrap_tree ,aes(colour=group),size=1, layout="rectangular") +theme_tree()+theme(legend.key.size = unit(5,"line"),legend.key.width = unit(3,"line"),legend.text=element_text(size=22,color="black"),legend.title=element_text(face = "bold",hjust=0.1,size=25),legend.margin = margin(t = 0, r = 10, b = 0, l = 0),plot.background = element_rect(fill="white",color="transparent"),panel.background = element_rect(fill="transparent",color="transparent")) + scale_color_manual(values=group_colors)+ guides(color="none")+ geom_tiplab()+ geom_nodelab(aes(label=label),color="black",size=5,font="bold",hjust=-0.2)
+
+
+ggsave(boot_tree ,filename=paste0(figpath,"RAxML/RAxML_rerooted_boot_tree_aspat_clean_all_chr_SNP_filtered_2_",miss,"mis_noclones_recoded_MAF0.05_LD0.2_subsample70_ML_tree_GAMMA_bootstrap.png"),height=14,width=12,dpi=500)
+```
+
+
+#Plot Treemix tree 
+#Script modified from https://speciationgenomics.github.io/Treemix/
+```{r}
+library(RColorBrewer)
+library(R.utils)
+library(popcorn)
+library(OptM)
+
+#Compute DeltaM using the Evanno method
+
+#Find optimal value of m using optM package : best m value=1
+optm=optM(folder = paste0(path,"Treemix/"))
+
+#Plot trees using built-in R function for different values of m 
+setwd(paste0(path,"Treemix/"))
+source(paste0(path,"Treemix/plotting_funcs.R"))
+
+prefix=paste0(path,"Treemix/","aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70.p.treemix.1")
+
+
+par(mfrow=c(2,2))
+for(edge in 0:2){
+  
+  png(paste0(figpath,"Treemix/","Group1234_edge",as.character(edge),"rooted_Group1.png"), 
+    width=2400, height=1800,  # Larger dimensions
+    res=300,                  # High resolution (300 dpi)
+    pointsize=16)
+  
+  
+  # Open a PNG device to save the plot
+  plot_tree(cex=0.8,paste0(prefix,".",edge),disp=0.0001,plus=0.0005,lwd=1.5,ybar=0.3)
+  title(paste(edge,"edges"))
+  
+  # Close the PNG device to save the plot
+  dev.off()
+  
+  print(get_f(paste0(prefix,".",edge)))
+  
+}
+
+
+```
+
+#Make tanglegram figure with hierachical clustering of symbionts kmer matrix for the same set of samples
+```{r}
+library(dendextend)
+library(DECIPHER)
+library(ape)
+
+#Load kmer distance matrix and symbionts clusters annotation
+kmer_mat=as.matrix(read.table(paste0("C:/Users/Hugo/Documents/Data/symbionts/","D2s_50M_dist_matrix_aspat_clean.txt"),check.names = F))
+
+symb_clusters=read.table(paste0("C:/Users/Hugo/Documents/Data/symbionts/","Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
+
+#Load RAxML tree of host lineages
+rerooted_bootstrap_file<-paste0(path, "RAxML/RAxML_bipartitions.aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70_final_tree_GAMMA_rerooted_pruned.nwk")
+rerooted_bootstrap_tree=DECIPHER::ReadDendrogram(file=rerooted_bootstrap_file) 
+
+#Load list of samples to prune out, to retain only samples that have been correctly assigned both a host and symbiont cluster and reduce the number of leaves in dendogram for better visualization
+prune_host=(read.table(paste0(path, "RAxML/prune_samples_host.txt")))$V1
+prune_symbiont=(read.table(paste0(path, "RAxML/prune_samples_symbiont.txt")))$V1
+
+# prune=data.frame(wgsID_short=retain_samples) %>% merge(pop,by.x="wgsID_short",by.y="sample")
+# 
+# prune_host=c(prune_samples,"NC2-18","NC5-11", "NC7-16", "NC5-25", "NC5-1" , "NC3-23", "NC2-24", "NC2-22", "NC5-22", "NC2-25", "NC3-6" , "NC7-21" ,"NC3-3"  ,"NC5-6" ,"NC4-18" ,"NC8-14", "NC3-21", "NC5-12",sample(prune$wgsID_short[prune$Group=="Group1"],16),sample(prune$wgsID_short[prune$Group=="Group2"],12),sample(prune$wgsID_short[prune$Group=="Group4"],12))
+# 
+# prune_symbiont=c(prunesamp,prune_host)
+# 
+# #Retain only samples that have been correctly assinged botha host cluster and a symbiont cluster 
+# retain_samples=intersect(labels(rerooted_bootstrap_tree),symb_clusters$wgsID_short[!is.na(symb_clusters$ITS2)])
+# prune_samples=intersect(labels(rerooted_bootstrap_tree),symb_clusters$wgsID_short[is.na(symb_clusters$ITS2)])
+
+#Create dendrogram base on host SNPs
+rerooted_bootstrap_tree=prune(rerooted_bootstrap_tree,prune_host)
+
+group_colors=c("#016765","#079CEF","#FFCC33","#CC791E")
+names(group_colors)=c("Group3","Group4","Group2","Group1")
+
+dend1 <- rerooted_bootstrap_tree %>%
+  set("labels_cex", 2) %>%  # Set label size
+  color_branches(col = group_colors[unlist(lapply(labels(rerooted_bootstrap_tree), 
+                                                      function(x) { pop[pop$sample == x, "Group"] }))]) %>%  
+  hang.dendrogram(hang = -1)
+
+# 203=
+# 207=
+#   206=
+#   202
+
+
+#Create dendrogram based on symbionts kmer
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% retain_samples,colnames(kmer_mat) %in% retain_samples]
+kmer_mat_sub=kmer_mat
+
+K=10
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+pcoa_mat_sub=pcoa_scores[,2:10]
+
+#Perform hiearchical clustering with bootstrap resampling 
+hc2_pv <- pvclust(t(pcoa_mat_sub), method.hclust = "ward.D2", method.dist = "euclidean", nboot = 100)
+saveRDS(hc2_pv,"C:/Users/Hugo/Documents/Data/symbionts/pvclust_RAxML_subset.rds")
+hc2_dendro <- as.dendrogram(hc2_pv$hclust)
+
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+hc2_dendro_pruned <- prune(hc2_dendro, prune_symbiont)
+
+dend2<- hc2_dendro_pruned %>%
+  dendextend::set("labels_cex",2)%>%color_branches(col = cluster_colors[unlist(lapply(labels(hc2_dendro_pruned), 
+                                                      function(x) { symb_clusters[symb_clusters$wgsID_short == x, "ITS2"] }))]) %>%  
+  hang.dendrogram(hang = -1)
+
+#Increase brench lengths for clearer visualization 
+dend2=raise.dendrogram(dend2, 0.5)
+
+
+#Create a tanglegram
+dendCombined <- dendlist(dend1, dend2)
+
+
+png(height=465, width=700, file=paste0(figpath,"Host_RAxML_symbionts_kmer_tanglegram.png"), res=300, units='mm')
+dendCombined2<-dendCombined %>%
+  untangle(method = "step2side") %>%
+  tanglegram(common_subtrees_color_lines = F,
+             highlight_distinct_edges = F,
+             highlight_branches_lwd = F,
+             common_subtrees_color_lines_default_single_leaf_color = "black",
+             lwd = 2,
+             sort = F,add_points=T,columns_width=c(6,2,6),edge.lwd=4,left_dendo_mar=c(2.1,5,2.1,0.5),right_dendo_mar=c(2.1,0.5,2.1,5),color_lines=group_colors[unlist(lapply(labels(rerooted_bootstrap_tree), 
+                                                      function(x) { pop[pop$sample == x, "Group"] }))],axes=F,margin_inner=0.5)
+dev.off()
+
+# prunesamp=rownames(kmer_mat)[!rownames(kmer_mat) %in% retain_samples]
+# 
+# dend2_modified <- dend2 %>%
+#   set("branches_lwd", 3) %>%  # Increase branch line width
+#   set("labels", NULL) 
+# 
+# png(height=465, width=1000, file=paste0(figpath,"Symbionts_dendogram_modif2.png"), res=300, units='mm')
+# plot(dend2_modified)
+# dev.off()
+# 
+# axis1=1
+# axis2=2
+# text_size=30
+# colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+# pcoa_plot <- pcoa_scores %>% mutate(wgsID_short=rownames(pcoa_scores)) %>% merge(symb_clusters,by="wgsID_short") %>% ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2")) +
+#   # Plot site scores
+#   geom_point( size = 5,alpha=0.8) +
+#   # Labels and theme
+#   labs(x = paste0("PCo",axis1," (","NA","%)"), y = paste0("PCo",axis2," (",p,"NA","%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) 
+```
+
+
+
+
+#Plot PCA
+```{r}
+library(adegenet)
+library(dartR)
+
+MISS=c("05","10","20")
+MAF=c("0.01","0.05")
+
+#Generate covariance matrices
+for(M in MISS){
+  
+  #Convert vcf file to genlight object
+  gbr_nc_genlight=gl.read.vcf(paste0(path,"Vcf_files/aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF0.05_LD0.2.vcf.gz"),verbose=NULL)
+
+  Nsites=length(gbr_nc_genlight$loc.names)
+
+  cov=glPca(gbr_nc_genlight,parallel=T)
+
+  saveRDS(cov,paste0(path,"Popgen_outputs/PCA/aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF0.05_LD0.2",".cov.rds"))
+}
+
+#Plot PCA results 
+for(M in MISS){
+  for(m in MAF){
+    #Read covariance data
+  cov=readRDS(paste0(path,"Popgen_outputs/PCA/aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2",".cov.rds"))
+  
+  # cov=readRDS(paste0(path,"Popgen_outputs/PCA/aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF0.01_LD0.2",".cov.rds"))
+  
+  cov.scores=as.data.frame(cov$scores)
+  cov.scores$ID=rownames(cov.scores)
+  cov.scores$wgsID_short=sub("_.*","",sub(".*Aspat-","",cov.scores$ID))
+  
+ 
+  
+  #Add cluster information
+  cov.scores=cov.scores %>% merge(meta_colony %>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster),by.x="locationID",by.y="Site.name"),by="wgsID_short")
+  
+  #Remove some samples that have probably been mis-labelled based on previous results
+  cov.scores=cov.scores %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748","FITZ-1707","NC4-14"))
+  
+   write.table(cov.scores %>% dplyr::select(wgsID_short,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8,PC9,PC10),paste0("C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Host_PCs_aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2.txt"),row.names=F,quote=F)
+  
+  typecolors<-c("#016765","#079CEF","#FFCC33","#CC791E")
+  names(typecolors)<-c("NC","CB","GBR_South","GBR_Central_North")
+  
+  pve_all=data.frame(1:10,100*cov$eig[1:10]/sum(cov$eig))
+
+  perc_expl_plot=pve_all %>% ggplot(aes(y=X100...cov.eig.1.10..sum.cov.eig.,x=factor(X1.10),group=1))+ geom_bar(stat="identity",colour="#092347",fill="#092347")  + theme_classic() + guides(fill=F,colour=F) + theme(axis.text.x = element_text(size=20,colour="black"),axis.text.y = element_text(size=20,colour="black"),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=15,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="Principal Component",y="% variance explained") + scale_y_continuous(expand=c(0,0))
+
+  ggsave(perc_expl_plot,filename=paste0(figpath,"PCA/PCimportance_aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2.png"),width=14,height=12,dpi=320)
+  
+  # ggsave(perc_expl_plot,filename=paste0(figpath,"PCA/PCimportance_aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF0.01_LD0.2.png"),width=14,height=12,dpi=320)
+  
+  for(i in 1:4){
+  perc1=round(100*cov$eig[i]/sum(cov$eig),2)
+  perc2=round(100*cov$eig[i+1]/sum(cov$eig),2)
+  
+  PC1=paste0("PC",as.character(i))
+  PC2=paste0("PC",as.character(i+1))
+  
+  pca = ggplot(data = cov.scores, aes_string(x=PC1, y=PC2, fill = "Genomic.Cluster",color="Genomic.Cluster")) + geom_point(size=5.5,alpha=0.8,pch=21) + theme_classic() + theme(axis.text.x = element_text(size=30,colour='black'),axis.text.y = element_text(size=30,colour='black'),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30),legend.text=element_text(size=22),legend.title=element_text(size=25),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position="right",legend.text.align = 0,legend.background = element_rect(fill="transparent")) + labs(x=paste0(PC1," (",as.character(perc1),"%)"),y=paste0(PC2," (",as.character(perc2),"%)")) + scale_fill_manual(values=typecolors,labels=as_labeller(c("NC"="NC","CB"="CB","GBR_South"="South GBR","GBR_Central_North"="Central/North GBR")))  + scale_colour_manual(values=typecolors) + guides(fill=guide_legend(override.aes=list(size=14),title="Genomic Cluster"),color="none") + stat_ellipse(level=0.95,linetype="dashed",linewidth=1)
+  
+  # ggsave(pca,filename=paste0(figpath,"PCA/PCA_",PC1,"-",PC2,"_aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF0.01_LD0.2.png"),width=16,height=12,dpi=320)
+  
+   ggsave(pca,filename=paste0(figpath,"PCA/PCA_",PC1,"-",PC2,"_aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2_filtered.png"),width=16,height=12,dpi=320)
+}
+  }
+}
+
+#Some samples have weird clustering but not because of missing data, probably samples mis-identification
+#List of weird samples that have probably been interchanged with other samples
+
+#Plot PCA colored by depth to rule out any batch effect
+depth=read.table(paste0(path,"Popgen_outputs/PCA/aspat_clean_all_chr_SNP_filtered_2_20mis.idepth"),header=T)
+depth$wgsID_short=sub("_.*","",sub(".*Aspat-","",depth$INDV))
+depth$MEAN_DEPTH=as.numeric(depth$MEAN_DEPTH)
+
+M="20"
+m="0.01"
+
+cov=readRDS(paste0(path,"Popgen_outputs/PCA/aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2",".cov.rds"))
+    
+cov.scores=as.data.frame(cov$scores)
+cov.scores$ID=rownames(cov.scores)
+cov.scores$wgsID_short=sub("_.*","",sub(".*Aspat-","",cov.scores$ID))
+    
+#Add depth information
+cov.scores=cov.scores %>% merge(depth %>% dplyr::select(MEAN_DEPTH,wgsID_short),by="wgsID_short")
+    
+#Remove some samples that have probably been mis-labelled based on previous results
+cov.scores=cov.scores %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+
+pve_all=data.frame(1:10,100*cov$eig[1:10]/sum(cov$eig))
+
+perc1=round(100*cov$eig[1]/sum(cov$eig),2)
+perc2=round(100*cov$eig[2]/sum(cov$eig),2)
+  
+PC1=paste0("PC",as.character(1))
+PC2=paste0("PC",as.character(2))
+  
+  pca_depth = ggplot(data = cov.scores, aes_string(x=PC1, y=PC2, fill = "MEAN_DEPTH",color="MEAN_DEPTH")) + geom_point(size=5.5,alpha=0.8,pch=21) + theme_classic() + theme(axis.text.x = element_text(size=30,colour='black'),axis.text.y = element_text(size=30,colour='black'),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30),legend.text=element_text(size=22),legend.title=element_text(size=25),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position="right",legend.text.align = 0,legend.background = element_rect(fill="transparent")) + labs(x=paste0(PC1," (",as.character(perc1),"%)"),y=paste0(PC2," (",as.character(perc2),"%)")) + guides(fill="none") + guides(fill=guide_legend(override.aes=list(size=14),title="Mean depth (X)"),color="none")
+  
+  # ggsave(pca,filename=paste0(figpath,"PCA/PCA_",PC1,"-",PC2,"_aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF0.01_LD0.2.png"),width=16,height=12,dpi=320)
+  
+   ggsave(pca_depth,filename=paste0(figpath,"PCA/Depth_PCA_",PC1,"-",PC2,"_aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2.png"),width=16,height=12,dpi=320)
+```
+
+#Plot Admixture
+```{r}
+#Load name of samples included in the analysis 
+sample.names=read.table(paste0(path,"Popgen_outputs/Admixture/aspat_clean_all_chr_SNP_filtered_2_noclones_sample_names.txt"),header=F,col.names=c("sample"))
+sample.names$wgsID_short=sub(".*Aspat-","",sub("_.*","",sample.names$sample))
+
+#Load details of population
+pop=read.table(paste0(path,"Popgen_outputs/Admixture/aspat_clean_filtered2_Group1234_noclones.filelist.txt"),col.names=c("sample","Group"))
+pop$wgsID_short=sub(".*Aspat-","",sub("_.*","",pop$sample))
+
+
+MISS=c("05","10","20")
+MISS=c("05","10")
+m="0.05"
+for(M in MISS){
+
+  #Load admixture results 
+  admix_df=intersect(list.files(paste0(path,"Popgen_outputs/Admixture/"),"*.Q$",full.names=T),list.files(paste0(path,"Popgen_outputs/Admixture/"),paste0("aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2"),full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=sub(".Q","",sub(".*0.2\\.","",x)))) %>% bind_rows()
+  
+  #Add sample names to dataframe and group info 
+  admix_df=cbind(data.frame(wgsID_short=rep(sample.names$wgsID_short,6)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5,V6),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number))) %>% merge(pop %>% dplyr::select(wgsID_short,Group),by="wgsID_short") 
+  
+  #Filter out samples that were outliers in the PCA
+  admix_df=admix_df %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+  
+  #Create clusters color legend 
+  popcolors<-c("#016765","#FFCC33","#079CEF","#CC791E","grey","black")
+  names(popcolors)=paste0("V",as.character(seq(1,6)))
+  
+  group_labels=c("Group1"="Central/North GBR","Group2"="South GBR","Group3"="NC","Group4"="CB")
+  
+  admix_plot = ggplot(data = admix_df %>% subset(K_number %in% paste0("K=",as.character(seq(2,6)))), aes(x=wgsID_short, y=Prop, colour = Cluster,fill=Cluster)) + geom_bar(position = "stack",stat="identity") + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(fill=F,colour=F)+facet_grid(K_number~Group,scales="free_x",switch="y",labeller=labeller(Group=group_labels)) + theme(axis.text.x = element_blank(),axis.text.y = element_text(size=15),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=15,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="Individual",y="Ancestral population") + scale_fill_manual(values=popcolors) + scale_colour_manual(values=popcolors) + scale_y_continuous(expand=c(0,0))
+  
+  ggsave(admix_plot,filename=paste0(figpath,"Admixture/Admix_GBR_NC_MAF",m,"_",M,"mis.png"),width=18,height=10,dpi=320)
+  
+  #Plot optimal K 
+  Kselec=read.table(paste0(path,"Popgen_outputs/Admixture/",paste0("aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2.Kselection.txt")))
+  Kselec$V3=str_replace(Kselec$V3,"\\(","")
+  Kselec$V3=str_replace(Kselec$V3,"\\):","")
+  
+  Kselec$V3=factor(Kselec$V3,levels=paste0("K=",seq(1,10,1)))
+  kselec_plot=Kselec %>% ggplot(aes(x=factor(V3),y=V4,group=1)) + geom_line(size=1.5,colour="grey")+ geom_point(size=6,colour="#092347")  + theme_classic() + guides(fill=F,colour=F) + theme(axis.text.x = element_text(size=20,colour="black"),axis.text.y = element_text(size=20,colour="black"),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=15,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="N Ancestral population",y="Cross-validation error")
+  
+  ggsave(kselec_plot,filename=paste0(figpath,"Admixture/Admix_GBR_NC_MAF",m,"_",M,"mis_CV.png"),width=12,height=8,dpi=320)
+  
+  #Plot log-likelihoods 
+  Loglik=read.table(paste0(path,"Popgen_outputs/Admixture/",paste0("aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2.Loglikelihood.txt")))
+  Loglik$V3=paste0("K=",seq(1,6))
+  Loglik$AIC=2*as.numeric(sub("K=","",Loglik$V3))-2*Loglik$V2
+  
+  Loglik$V3=factor(Loglik$V3,levels=paste0("K=",seq(1,10,1)))
+  Loglik_plot=Loglik %>% ggplot(aes(x=factor(V3),y=V2/10000,group=1)) + geom_line(size=1.5,colour="grey")+ geom_point(size=6,colour="#092347")  + theme_classic() + guides(fill=F,colour=F) + theme(axis.text.x = element_text(size=20,colour="black"),axis.text.y = element_text(size=20,colour="black"),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=15,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="N Ancestral population",y=expression("Log-likelihood (x" * 10^4 * ")"))
+  
+  ggsave(Loglik_plot,filename=paste0(figpath,"Admixture/Admix_GBR_NC_MAF",m,"_",M,"mis_Loglik.png"),width=12,height=8,dpi=320)
+  
+  # #Try using the method deltaK proposed by Evanno 2005 on this dataset
+  # #For this we'll need the Loglikelihood value across each bootstrap replicate 
+  # boot_loglik_df=intersect(list.files(paste0(path,"Popgen_outputs/Admixture/"),"*boostrap_Loglikelihood.txt$",full.names=T),list.files(paste0(path,"Popgen_outputs/Admixture/"),paste0(M,"mis"),full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=sub("\\.boo.*","",sub(".*LD0.2.log","",x)),Replicate=seq(1,200))) %>% bind_rows()
+  # boot_loglik_df=boot_loglik_df %>% dplyr::select(c(V5,V6,K_number,Replicate))
+  # colnames(boot_loglik_df)=c("Name","LogK","Kvalue","Replicate")
+  # 
+  # boot_loglik_sum=data.frame()
+  # for(r in seq(1,200)){
+  #   boot_loglik_df_sub =boot_loglik_df %>% subset(Replicate==r) %>% arrange(as.numeric(Kvalue))
+  #   
+  #   #Compute K'
+  #   for(i in 2:nrow(boot_loglik_df_sub)){
+  #     boot_loglik_df_sub$LogKprim[i]=boot_loglik_df_sub$LogK[i]-boot_loglik_df_sub$LogK[(i-1)]
+  #   }
+  # 
+  # #Compute K''
+  #   for(i in 1:(nrow(boot_loglik_df_sub)-1)){
+  #     boot_loglik_df_sub$LogKprim2[i]=abs(boot_loglik_df_sub$LogKprim[i+1]-boot_loglik_df_sub$LogKprim[i])
+  #   }
+  #   boot_loglik_sum=rbind(boot_loglik_sum,boot_loglik_df_sub)
+  # }
+  # 
+  # 
+  # boot_loglik_average=boot_loglik_sum %>% subset(Kvalue %in% seq(2,5)) %>% group_by(factor(Kvalue)) %>% dplyr::summarize(mLogKprim2=mean(LogKprim2),sdLogK=sd(LogK),deltaK=mLogKprim2/sdLogK)
+  # 
+  # colnames(boot_loglik_average)=c("Kvalue","mLogKprim2","sdLogK","deltaK")
+  # 
+  # boot_loglik_average$Kvalue=factor(boot_loglik_average$Kvalue,levels=seq(2,10))
+  # 
+  # deltaK_plot=boot_loglik_average %>% ggplot(aes(x=Kvalue,y=deltaK,group=1)) + geom_line(size=1.5,colour="grey")+ geom_point(size=6,colour="#092347")  + theme_classic() + guides(fill=F,colour=F) + theme(axis.text.x = element_text(size=20,colour="black"),axis.text.y = element_text(size=20,colour="black"),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=15,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="N Ancestral population",y="\u394K")
+  # 
+  # ggsave(deltaK_plot,filename=paste0(figpath,"Admixture/Admix_GBR_NC_MAF0.01_",M,"mis_deltaK.png"),width=12,height=8,dpi=320)
+
+}
+```
+
+#Plot Admixture results for best K value (K=4)
+```{r}
+MISS="20"
+m="0.05"
+K_optimal="K=4"
+
+#Load admixture results 
+admix_df=intersect(list.files(paste0(path,"Popgen_outputs/Admixture/"),"*.Q$",full.names=T),list.files(paste0(path,"Popgen_outputs/Admixture/"),paste0("aspat_clean_all_chr_SNP_filtered_2_",MISS,"mis_noclones_recoded_MAF",m,"_LD0.2"),full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=sub(".Q","",sub(".*0.2\\.","",x)))) %>% bind_rows()
+  
+  #Add sample names to dataframe and group info 
+admix_df=cbind(data.frame(wgsID_short=rep(sample.names$wgsID_short,6)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5,V6),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number))) %>% merge(pop %>% dplyr::select(wgsID_short,Group),by="wgsID_short") 
+  
+  #Filter out samples that were outliers in the PCA
+admix_df=admix_df %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+  
+  #Create clusters color legend 
+popcolors<-c("#CC791E","#016765","#079CEF","#FFCC33","grey","black")
+names(popcolors)=paste0("V",as.character(seq(1,6)))
+  
+group_labels=c("Group1"="Central/North GBR","Group2"="South GBR","Group3"="NC","Group4"="CB")
+  
+  admix_plot = ggplot(data = admix_df %>% subset(K_number==K_optimal), aes(x=wgsID_short, y=Prop, colour = Cluster,fill=Cluster)) + geom_bar(position = "stack",stat="identity") + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(fill=F,colour=F)+facet_grid(~Group,scales="free_x",switch="y",labeller=labeller(Group=group_labels)) + theme(axis.text.x = element_blank(),axis.text.y = element_text(size=20),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=20,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="",y="Ancestral population (K=4)") + scale_fill_manual(values=popcolors) + scale_colour_manual(values=popcolors) + scale_y_continuous(expand=c(0,0))
+  
+ggsave(admix_plot,filename=paste0(figpath,"Admixture/Admix_GBR_NC_MAF",m,"_",MISS,"mis_K4.png"),width=18,height=6,dpi=320)
+
+#Coral from the South GBR that have strong assignment to central cluster (they come from the 3 different reefs) and they don't seem to have significantly lower depth 
+group2_out=admix_df %>% subset(K_number=="K=4" & Cluster=="V1" & Group=="Group2" & Prop>0.2)
+# 
+# write.table(group2_out,paste0(path,"Group2_samples_cluster_Group1.txt"))
+#Look at their missingness :
+
+admix_df_save=admix_df %>% subset(K_number=="K=4" & Cluster %in% c("V1","V2","V3","V4")) %>% pivot_wider(names_from="Cluster",values_from="Prop") %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+
+write.table(admix_df_save,paste0("C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Admixture_coeff_aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2.txt"),row.names=F,quote=F)
+
+
+```
+
+#Save host cluster assignment for each sample 
+#1. Only including files that have been used in popgen analyses
+#2. Also including outliers samples (n=6)
+#3. Also including clones previously identified 
+```{r}
+sample.names=read.table(paste0(path,"Popgen_outputs/Admixture/aspat_clean_all_chr_SNP_filtered_2_noclones_sample_names.txt"),header=F,col.names=c("sample"))
+sample.names$wgsID_short=sub(".*Aspat-","",sub("_.*","",sample.names$sample))
+
+#Load details of population
+pop=read.table(paste0(path,"Popgen_outputs/Admixture/aspat_clean_filtered2_Group1234_noclones.filelist.txt"),col.names=c("sample","Group"))
+pop$wgsID_short=sub(".*Aspat-","",sub("_.*","",pop$sample))
+
+MISS="20"
+m="0.05"
+K_optimal="K=4"
+
+#Load admixture results 
+admix_df=intersect(list.files(paste0(path,"Popgen_outputs/Admixture/"),"*.Q$",full.names=T),list.files(paste0(path,"Popgen_outputs/Admixture/"),paste0("aspat_clean_all_chr_SNP_filtered_2_",MISS,"mis_noclones_recoded_MAF",m,"_LD0.2"),full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=sub(".Q","",sub(".*0.2\\.","",x)))) %>% bind_rows()
+  
+#Add sample names to dataframe and group info 
+admix_df=cbind(data.frame(wgsID_short=rep(sample.names$wgsID_short,6)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5,V6),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number))) %>% merge(pop %>% dplyr::select(wgsID_short,Group),by="wgsID_short")  %>% subset(K_number==K_optimal)
+
+#Assign each sample to its stronger cluster assignment
+host_clusters=data.frame()
+for(id in unique(admix_df$wgsID_short)){
+  assign=admix_df$Cluster[admix_df$wgsID_short==id & admix_df$Prop==max(admix_df$Prop[admix_df$wgsID_short==id],na.rm=T) & !is.na(admix_df$Prop)]
+  
+  host_clusters=rbind(host_clusters,data.frame(wgsID_short=id,Cluster_id=assign))
+}
+
+#Convert clusters names to those used in the publication
+cluster_corresp=data.frame(Cluster_id=c("V1","V2","V3","V4"),Genomic_Cluster=c("Group1","Group3","Group4","Group2"))
+host_clusters=host_clusters %>% merge(cluster_corresp,by="Cluster_id")
+
+#Add information about geographic clusters 
+host_clusters=host_clusters %>% merge(meta_colony %>% dplyr::select(locationID,wgsID_short),by="wgsID_short") 
+host_clusters=host_clusters %>% mutate(Geographic_cluster=if_else(locationID %in% c("Heron","Lady Musgrave","Fitzroy Reef"),"South GBR",if_else(locationID %in% c("Bellona Ouest","Bellona Sud","Chesterfields NE","Chesterfields NO","Chesterfields SO","Ilot Loop"),"CB",if_else(locationID %in% c("Plateau de Koniene","Pointe de Poum","Recif du Prony","Recif Mara","Recif Snark","Ile Verte","Ilot Contrariete","Ilot Deverd"),"NC","Central/North GBR"))))
+
+#label outliers (i.e samples for which clusters assingation does not make sense)
+cb_out=host_clusters$wgsID_short[host_clusters$Geographic_cluster=="CB" & host_clusters$Genomic_Cluster!="Group4"]
+nc_out=host_clusters$wgsID_short[host_clusters$Geographic_cluster=="NC" & host_clusters$Genomic_Cluster!="Group3"]
+
+#THose are most likely not outiers but samples with strong admixture with cluster 1
+gbrs_out=host_clusters$wgsID_short[host_clusters$Geographic_cluster=="South GBR" & host_clusters$Genomic_Cluster!="Group2"]
+gbrcn_out=host_clusters$wgsID_short[host_clusters$Geographic_cluster=="Central/North GBR" & host_clusters$Genomic_Cluster!="Group1"]
+
+host_clusters=host_clusters %>% mutate(Outlier=if_else(wgsID_short %in% c(cb_out,nc_out),"Y","N"))
+
+#Add sample names 
+host_clusters=host_clusters %>% merge(sample.names,by="wgsID_short")
+
+write.table(host_clusters,"C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Host_cluster_assignment/host_clusters_popgensamples_N1005.txt",quote=F,row.names=F)
+
+
+#Save version without outliers 
+write.table(host_clusters %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748")),"C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Host_cluster_assignment/host_clusters_popgensamples_nooutliers_N999.txt",quote=F,row.names=F)
+
+#Save version without south GBR samples that have assignation to cluster
+write.table(host_clusters %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748",gbrs_out)),"C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Host_cluster_assignment/host_clusters_popgensamples_nooutliers_noadmix_N992.txt",quote=F,row.names=F)
+
+#Save the same version in the popfile format 
+host_clusters_filt=host_clusters %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748",gbrs_out))
+write.table(host_clusters_filt[,c("sample","Genomic_Cluster")],"C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Host_cluster_assignment/Group1234_nooutliers_noadmix_popfile.txt",quote=F,row.names=F,col.names=F,sep="\t")
+
+#Combine this information with the clones indentification to assign a genomic cluster to each clone 
+all_samples=read.table(paste0(path,"Popgen_outputs/Host_cluster_assignment/aspat_clean_filtered2_Group1234.filelist.txt"),col.names=c("sample"))
+relat=read.csv(paste0(path,"Clones_ID/Clones_Relatedness_IBS_allGroups.csv"))
+
+natural_clones=all_samples$sample[!all_samples$sample %in% host_clusters$sample]
+tech_replicates=c(natural_clones[1:9],natural_clones[59:68],"RRAP-ECT01-2022-Aspat-STCR-750-B_L3_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-OCCH-1516-B_L4_pe_aln_Amilleporav3")
+natural_clones=natural_clones[!natural_clones %in% tech_replicates]
+
+#Assign natural clones to the correct cluster
+host_clusters2=host_clusters %>% mutate(Clone_group=seq(1,1005))
+host_clusters_clones=host_clusters2
+clone_groups=c()
+i=1
+for(c in natural_clones){
+  shortname=sub("_.*","",c)
+  relat_sub=relat %>% subset(wgs_ID1==shortname | wgs_ID2==shortname)
+  pair=c(relat_sub$wgs_ID1,relat_sub$wgs_ID2)
+  pair=unique(pair)[unique(pair) %in% sub("_.*","",host_clusters$sample)]
+  
+  wgsID_short=sub(".*Aspat-","",shortname)
+  pair_short=sub(".*Aspat-","",pair)
+  
+  
+  
+  host_clusters_clones=rbind(host_clusters_clones,data.frame(wgsID_short=wgsID_short,Cluster_id=host_clusters$Cluster_id[host_clusters$wgsID_short==pair_short],Genomic_Cluster=host_clusters$Genomic_Cluster[host_clusters$wgsID_short==pair_short],locationID=meta_colony$locationID[meta_colony$wgsID_short==pair_short],Geographic_cluster=host_clusters$Geographic_cluster[host_clusters$wgsID_short==pair_short],Outlier="N",sample=c,Clone_group=host_clusters2$Clone_group[host_clusters2$wgsID_short==pair_short]))
+}
+
+#Assign technical replicates to the correct cluster
+host_clusters_clones=host_clusters_clones %>% mutate(Tech_replicate="N")
+
+for(t in tech_replicates){
+  t_short=sub("RRAP-","",t)
+  t_short=sub("_.*","",t_short)
+  t_short=sub(".*Aspat-","",t_short)
+  t_short=sub("-B","",t_short)
+  t_short=sub(".*-","",t_short)
+  
+  
+  wgsID_short=sub("_.*","",t)
+  wgsID_short=sub(".*Aspat-","",wgsID_short)
+  host_sub=host_clusters_clones[grepl(paste0("-",t_short,"$"),host_clusters_clones$wgsID_short),]
+  
+  if(nrow(host_sub)!=1){
+    print("problem")
+    print(t)
+  }
+  
+  host_sub$wgsID_short=wgsID_short
+  host_sub$sample=t
+  host_sub$Tech_replicate="Y"
+  
+  host_clusters_clones=rbind(host_clusters_clones,host_sub)
+}
+
+write.table(host_clusters_clones,"C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Host_cluster_assignment/host_clusters_allsamples_N1088.txt",quote=F,row.names=F)
+```
+
+
+#Plot MAP with Admixture results and dadi migration rates (Figure 1)
+```{r}
+
+#1. Plot base map font
+site_coordinates=xlsx::read.xlsx("C:/Users/Hugo/Documents/Data/Summary_collection_assays.xlsx",sheetName = "Feuil1",check.names=F,rowIndex=1:30,colIndex = 1:7,colClasses = c(rep("character",2),rep("numeric",5)))
+site_coordinates$Lon[16]=166.3273667
+colnames(site_coordinates)[5]="MMM"
+colnames(site_coordinates)[2]="Site.name"
+
+#Reef shapefile
+unep_reef_uncrop<-sf::st_read("E:/Hugo/Master 2/Master_OBEM/Stage/Data/14_001_WCMC008_CoralReefs2018_v4_1/01_Data/WCMC008_CoralReef2018_Py_v4_1.shp")
+
+#Countries border 
+australia_border<-raster::getData("GADM",country="AUS",level=0)
+ncl_border<-raster::getData("GADM",country="NCL",level=0)
+van_border<-geodata::gadm(country="VUT",level=0,path="C:/Users/Hugo/geodata/")
+#Convert Vanuatu spat vector to sf 
+van_border=sf::st_as_sf(van_border)
+
+#World border
+world=rnaturalearth::ne_countries(returnclass = "sf")["geometry"]
+
+world_map=ggplotGrob(ggplot(data = world) +
+    geom_sf(fill="white",colour="black")+
+  geom_rect(aes(xmin = 2564417, xmax = 5174417, ymin = 1564417, ymax = 3064417), color = "#092347", fill = NA,size=1) +
+    coord_sf(crs = "+proj=laea +lat_0=-10 +lon_0=160 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs") +theme_void())
+
+#Add bathymetry background rather than MMM
+library(ggOceanMaps)
+library(ggspatial)
+library(scatterpie)
+library(ggnewscale)
+
+
+
+site_map=basemap(limits = c(144,169, -26,-13),
+        bathymetry = TRUE,land.col=NA,land.border.col=NA,
+        glaciers = FALSE,legend.position="bottom",bathy.style = "rcb",bathy.alpha=0.5)  + geom_polygon(data=ncl_border, aes(long,lat,group=group),fill="grey",colour="grey40",size=0.3) + geom_polygon(data=australia_border, aes(long,lat,group=group),fill="grey",colour="grey40",size=0.3)+ geom_sf(data=van_border ,fill="grey",colour="grey40",size=0.3)+ geom_sf(data = unep_reef_uncrop['LAYER_NAME'],fill="grey",color="grey40",xlim=c(144,167),ylim=c(-25,-12),size=0.3)+ theme(legend.title = element_text(size=17,color="black",margin=margin(t = 0, r = 7, b = 35, l = 0)),legend.text = element_text(size=17,color="black"),legend.background = element_rect(fill = "transparent",colour = "transparent"),legend.key.height = unit(4,"mm"),legend.key.width = unit(20,"mm"),legend.position = "none",legend.margin=margin(0,0,0,0),
+        legend.box.margin=margin(-10,0,0,0),axis.text.x = element_text(size=20,color="#092347",vjust = -0.7,hjust=-0.2,
+                                 margin = margin( t = -30)),axis.text.y=element_text(size=20,color="#092347",hjust = -0.9,vjust=-0.3,margin=margin(l=0,r=-45,b=0,t=0)),plot.background= element_rect(fill="white", colour="white"),panel.background = element_rect(fill="transparent", colour="#092347",linewidth=1.1),axis.ticks =element_blank())+ labs(x="",y="")+
+  scale_y_continuous(labels = ~ paste0(.x, "\u00B0"))+
+  scale_x_continuous(labels = ~ paste0(.x, "\u00B0"))+
+  ggspatial::annotation_scale(
+    location = "tr",
+    bar_cols = c("#092347", "white"),
+    text_family = "ArcherPro Book",line_width = 1.5,text_cex=2
+  ) + ggspatial::annotation_north_arrow(location = "tr", which_north = "true", pad_x = unit(0.4, "in"), pad_y = unit(0.4, "in"),height=unit(2,"cm"),width=unit(2,"cm"), style = north_arrow_fancy_orienteering(fill = c("#092347", "white"))) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")+ geom_point(data=site_coordinates,aes(x=Lon,y=Lat),size=3,shape=21, color="#092347",fill="#092347") + guides(fill="none",color="none")
+
+
+
+
+
+
+
+
+
+#2. Plot pie chart with admixture proportion on top of map
+
+#Load admixture results for best K value 
+MISS="20"
+m="0.05"
+K_optimal="K=4"
+
+#Load admixture results 
+admix_df=intersect(list.files(paste0(path,"Popgen_outputs/Admixture/"),"*.Q$",full.names=T),list.files(paste0(path,"Popgen_outputs/Admixture/"),paste0("aspat_clean_all_chr_SNP_filtered_2_",MISS,"mis_noclones_recoded_MAF",m,"_LD0.2"),full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=sub(".Q","",sub(".*0.2\\.","",x)))) %>% bind_rows()
+  
+  #Add sample names to dataframe and group info 
+admix_df=cbind(data.frame(wgsID_short=rep(sample.names$wgsID_short,6)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5,V6),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number))) %>% merge(pop %>% dplyr::select(wgsID_short,Group),by="wgsID_short") 
+  
+  #Filter out samples that were outliers in the PCA
+admix_df=admix_df %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+
+#Combine with metadata and compute average per site 
+meta_colony$Lon=as.numeric(meta_colony$Lon)
+meta_colony$Lat=as.numeric(meta_colony$Lat)
+admix_df_site=admix_df %>% subset(K_number==K_optimal & Cluster %in% c("V1","V2","V3","V4")) %>% merge(meta_colony %>% dplyr::select(wgsID_short,locationID,Lon,Lat),by="wgsID_short") %>% group_by(locationID,Cluster) %>% dplyr::summarize(meanProp=mean(Prop,na.rm=T),Lat=mean(Lat,na.rm=T),Lon=mean(Lon,na.rm=T)) %>% pivot_wider(names_from = "Cluster",values_from = "meanProp")
+
+#Add sites coordinates and adjusted positions to plot the pies on the map
+admix_df_site=cbind(admix_df_site,data.frame(x.adj=c(-1,1,1,-1,1,2,1,-0.5,1,2,1,-1.5,-1,-1,-1,1.5,2,-1,-0.6,1,2,1,-1,1,2,1,1,-1,1),y.adj=c(-0.2,-0.5,1,1,0.5,-0.5,-1,0,0,0.5,1,-1,0,0.5,0,0.5,-1,-0.4,-0.2,0,0.5,-0.3,0,0.5,1,0.5,0,-0.5,0)))
+admix_df_site=admix_df_site %>% mutate(Lon.adj=Lon+x.adj,Lat.adj=Lat+y.adj)
+
+popcolors<-c("#CC791E","#016765","#079CEF","#FFCC33","grey","black")
+names(popcolors)=paste0("V",as.character(seq(1,6)))
+
+library(ggnewscale)
+#Add the pie chart on the top of the plot 
+site_map_pie=site_map + geom_segment(data=admix_df_site,aes(x=Lon,xend=Lon.adj,y=Lat,yend=Lat.adj),size=0.7,colour="#092347") + new_scale_fill()  + geom_scatterpie(data=admix_df_site,aes(x=Lon.adj,y=Lat.adj),cols=c("V1","V2","V3","V4"),pie_scale = 0.9,colour=NA) + scale_fill_manual(values=popcolors,guide="none") + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")
+
+site_map_pie_arrow=site_map_pie
+
+
+#Add arrows with migration rates on the map 
+arrow_coordinates=data.frame(Pop=c("Group1-Group2","Group1-Group3","Group1-Group4","Group2-Group3","Group2-Group4","Group3-Group4"),x=c(149,148,150,155,154.6,163),y=c(-20.5,-16,-18,-24,-23,-21),xend=c(151.5,165,156,164,157,159),yend=c(-23.2,-18,-19,-23.5,-20.5,-20.5))
+
+migration_rate=read.table("C:/Users/Hugo/Documents/Data/Genomics/dadi/Optimized_model_values/Bootstrap_parameters_allpairs.txt",header=T) %>% subset(Real_parameter %in% c("m12","m21")) %>% merge(arrow_coordinates,by.x="Pop_short",by.y="Pop") %>% cbind(curvature=c(0.3,0.5,-0.2,0.4,0.5,0.4,0.2,-0.4,-0.3,-0.3,-0.2,-0.2),arrow_dir=rep(c("forward", "backward"), length.out = 12),linetype=c("solid","dashed","dashed","solid","dashed","solid","dashed","solid","solid","dashed","solid","dashed")) 
+
+site_map_pie_arrow=site_map_pie
+
+#3. Add dadi migration rates on top of map
+for (i in seq_len(nrow(migration_rate))){
+  row <- migration_rate[i, ]
+  curv=migration_rate$curvature[i]
+  linetype=migration_rate$linetype[i]
+  
+  print(curv)
+  
+  if (row$arrow_dir == "forward") {
+    site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=log(row$median*10^10)/10,
+      x = row$x, y = row$y,
+      xend = row$xend, yend = row$yend,
+      curvature = curv,
+      linetype=linetype,
+      arrow = arrow(length = unit(0.03, "npc")),
+      color = "#092347"
+    )
+  } else if (row$arrow_dir == "backward") {
+    site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=log(row$median*10^10)/10,
+      x = row$xend, y = row$yend,
+      xend = row$x, yend = row$y,
+      curvature = curv,
+      linetype=linetype,
+      arrow = arrow(length = unit(0.03, "npc")),
+      color = "#092347"
+    )
+  }
+}
+
+library(scales)
+#Create dummmy legend 
+dummy=ggplot(data=migration_rate) + geom_curve(aes(x=x,y=y,yend=yend,xend=xend,size=log(median*10^10)/10)) + 
+  scale_size_continuous(
+    range=c(log(min(migration_rate$median)*10^10)/10,log(max(migration_rate$median)*10^10)/10),
+    name = "",
+    breaks=c(0.25,0.75,1.25),
+    labels=c(formatC(exp(0.25*10)/10^10, format = "e", digits = 1),formatC(exp(0.75*10)/10^10, format = "e", digits = 1),formatC(exp(1.25*10)/10^10, format = "e", digits = 1)),
+    guide = guide_legend(
+      title.position = "top",       
+      title.hjust = 0.5,            
+      label.position = "right",    
+      label.theme = element_text(size = 15,color="#092347"),  
+      direction = "vertical",    
+      override.aes = list(color = "#092347"))) + theme(legend.background = element_rect(fill = NA, color = NA),legend.key = element_rect(fill = NA))
+
+size_legend=cowplot::get_legend(dummy)
+
+site_map_pie_arrow=site_map_pie_arrow + draw_plot(size_legend,x=165,y=-24.5,width=1,height=1)
+
+
+plot(site_map_pie_arrow)
+
+full_site_map<-site_map_pie_arrow+ annotation_custom(grob=world_map,xmin=145,xmax=149.5,ymin=-Inf,ymax=-20)
+
+
+#4. Add ADMIXTURE results for best K value at the bottom
+MISS="20"
+m="0.05"
+K_optimal="K=4"
+
+popcolors<-c("#CC791E","#016765","#079CEF","#FFCC33","grey","black")
+names(popcolors)=paste0("V",as.character(seq(1,6)))
+
+#Load admixture results 
+admix_df=intersect(list.files(paste0(path,"Popgen_outputs/Admixture/"),"*.Q$",full.names=T),list.files(paste0(path,"Popgen_outputs/Admixture/"),paste0("aspat_clean_all_chr_SNP_filtered_2_",MISS,"mis_noclones_recoded_MAF",m,"_LD0.2"),full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=sub(".Q","",sub(".*0.2\\.","",x)))) %>% bind_rows()
+  
+  #Add sample names to dataframe and group info 
+admix_df=cbind(data.frame(wgsID_short=rep(sample.names$wgsID_short,6)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5,V6),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number))) %>% merge(pop %>% dplyr::select(wgsID_short,Group),by="wgsID_short") 
+  
+  #Filter out samples that were outliers in the PCA
+admix_df=admix_df %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+admix_df$Group=factor(admix_df$Group,levels=c("Group1","Group2","Group4","Group3"))
+  #Create clusters color legend 
+
+  
+group_labels=c("Group1"="Central/Northern GBR","Group2"="Southern GBR","Group3"="NC","Group4"="CB")
+  
+  admix_plot = ggplot(data = admix_df %>% subset(K_number==K_optimal), aes(x=wgsID_short, y=Prop, colour = Cluster,fill=Cluster)) + geom_bar(position = "stack",stat="identity") + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(fill=F,colour=F)+facet_grid(~Group,scales="free_x",switch="y",labeller=labeller(Group=group_labels)) + theme(axis.text.x = element_blank(),axis.text.y = element_text(size=20),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=20,face="bold"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.1,"cm"),panel.spacing.y = unit(1,"cm"),plot.background = element_rect(color="transparent",fill="transparent")) + labs(x="",y="") + scale_fill_manual(values=popcolors) + scale_colour_manual(values=popcolors) + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1),labels=c("0","0.5","1"))
+
+
+#5. Add PCA results on the side 
+M="20"
+m="0.05"
+
+cov=readRDS(paste0(path,"Popgen_outputs/PCA/aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2",".cov.rds"))
+    
+cov.scores=as.data.frame(cov$scores)
+cov.scores$ID=rownames(cov.scores)
+cov.scores$wgsID_short=sub("_.*","",sub(".*Aspat-","",cov.scores$ID))
+
+cov.scores=cov.scores %>% merge(meta_colony %>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster),by.x="locationID",by.y="Site.name"),by="wgsID_short")
+  
+    
+#Remove some samples that have probably been mis-labelled based on previous results
+cov.scores=cov.scores %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+  
+  
+typecolors<-c("#016765","#079CEF","#FFCC33","#CC791E")
+names(typecolors)<-c("NC","CB","GBR_South","GBR_Central_North")
+  
+i=1
+perc1=round(100*cov$eig[i]/sum(cov$eig),2)
+perc2=round(100*cov$eig[i+1]/sum(cov$eig),2)
+  
+PC1=paste0("PC",as.character(i))
+PC2=paste0("PC",as.character(i+1))
+  
+pca12 = ggplot(data = cov.scores, aes_string(x=PC1, y=PC2, fill = "Genomic.Cluster",color="Genomic.Cluster")) + geom_point(size=5.5,alpha=0.8,pch=21) + theme_classic() + theme(axis.text.x = element_text(size=20,colour='black'),axis.text.y = element_text(size=20,colour='black'),axis.title.y = element_text(size=20),axis.title.x = element_text(size=20),legend.text=element_text(size=22),legend.title=element_text(size=25),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position="right",legend.text.align = 0,legend.background = element_rect(fill="transparent")) + labs(x=paste0(PC1," (",as.character(perc1),"%)"),y=paste0(PC2," (",as.character(perc2),"%)")) + scale_fill_manual(values=typecolors,labels=as_labeller(c("NC"="NC","CB"="CB","GBR_South"="South GBR","GBR_Central_North"="Central/North GBR")))  + scale_colour_manual(values=typecolors) + guides(fill=guide_legend(override.aes=list(size=14),title="Genomic Cluster"),color="none") + stat_ellipse(level=0.95,linetype="dashed",linewidth=1) + guides(fill="none")
+
+i=2
+perc1=round(100*cov$eig[i]/sum(cov$eig),2)
+perc2=round(100*cov$eig[i+1]/sum(cov$eig),2)
+  
+PC1=paste0("PC",as.character(i))
+PC2=paste0("PC",as.character(i+1))
+
+
+pca23=ggplot(data = cov.scores, aes_string(x=PC1, y=PC2, fill = "Genomic.Cluster",color="Genomic.Cluster")) + geom_point(size=5.5,alpha=0.8,pch=21) + theme_classic() + theme(axis.text.x = element_text(size=20,colour='black'),axis.text.y = element_text(size=20,colour='black'),axis.title.y = element_text(size=20),axis.title.x = element_text(size=20),legend.text=element_text(size=22),legend.title=element_text(size=25),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position="right",legend.text.align = 0,legend.background = element_rect(fill="transparent")) + labs(x=paste0(PC1," (",as.character(perc1),"%)"),y=paste0(PC2," (",as.character(perc2),"%)")) + scale_fill_manual(values=typecolors,labels=as_labeller(c("NC"="NC","CB"="CB","GBR_South"="South GBR","GBR_Central_North"="Central/North GBR")))  + scale_colour_manual(values=typecolors) + guides(fill=guide_legend(override.aes=list(size=14),title="Genomic Cluster"),color="none") + stat_ellipse(level=0.95,linetype="dashed",linewidth=1) + guides(fill="none")
+  
+#6. Add tree (optional)
+  
+total_plot=cowplot::ggdraw() +draw_plot(full_site_map,x=0.0,y=0.3,width=0.65,height=0.7) +draw_plot(admix_plot,x=-0.005,y=-0.05,width=0.625,height=0.345) +draw_plot(pca12,x=0.63,y=0.5,width=0.3,height=0.495) +draw_plot(pca23,x=0.63,y=0.01,width=0.3,height=0.495)  + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b","c"),x=c(0,0,0.64),y=c(1,0.35,1),size=35)+ theme(legend.key.width =unit(5,"cm"))
+
+#Change facet order for better flow of legend 
+total_plot2=cowplot::ggdraw() +draw_plot(full_site_map,x=0.325,y=0.03,width=0.65,height=0.7) +draw_plot(admix_plot,x=0.320,y=0.67,width=0.625,height=0.345) +draw_plot(pca12,x=0,y=0.5,width=0.3,height=0.495) +draw_plot(pca23,x=0,y=0.01,width=0.3,height=0.495)  + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b","c"),x=c(0,0.32,0.32),y=c(1,1,0.7),size=35)+ theme(legend.key.width =unit(5,"cm"))
+
+ggsave(total_plot2,filename=paste0(figpath,"Manuscripts_figures/Figure_1_v3.png"),width=22,height=10,dpi=500)
+
+# ggsave(total_plot,filename=paste0(figpath,"Manuscripts_figures/Figure_1_total.png"),width=22,height=10,dpi=500)
+
+```
+
+#Plot Fst results
+```{r}
+#Fst results 
+library(corrplot)
+library(reshape2)
+
+fst_df=list.files(paste0(path,"Stats/"),"*.pairwise.log",full.names=T) %>% lapply(function(x)read.table(x,skip=17,nrow=2)) %>% bind_rows()
+
+fst_df_names=list.files(paste0(path,"Stats/"),"*.pairwise.log",full.names=T) %>% lapply(function(x)read.table(x,skip=6,nrow=2)) %>% bind_rows() %>% mutate(POP=sub(".*clean_","",sub("_Fst.*","",basename(V2)))) %>% mutate(Comparison=rep(seq(1,12),each=2),POP_N=rep(c("POP1","POP2"),12)) %>% dplyr::select(c(POP_N,POP,Comparison)) %>% pivot_wider(names_from="POP_N",values_from = "POP")
+
+fst_df=data.frame(Index="Fst",Type=fst_df$V4,Value=fst_df$V7)
+
+#Extract non wieghted estimator
+fst_df_mean=cbind(fst_df %>% subset(Type=="mean"),fst_df_names)
+
+#Transform long format to correlation matrix 
+fst_mat_mean=dcast(fst_df_mean,POP1~POP2,value.var="Value")
+rownames(fst_mat_mean) <- fst_mat_mean$POP1
+fst_mat_mean <- fst_mat_mean[, -1]
+
+#Modify column names to readable format 
+rownames(fst_mat_mean)=c("Central/North GBR","South GBR","NC","CB")
+colnames(fst_mat_mean)=c("Central/North GBR","South GBR","NC","CB")
+
+#Change label colors 
+groupcolors<-c("#CC791E","#FFCC33","#016765","#079CEF")
+
+png(height=465,width=465,file=paste0(figpath,"Pop_differentiation_diversity/Fst_pairwise_vcftools_Group1234_70subsamples_MAF0.05.png"),res=300,units="mm"
+    )
+corrplot::corrplot(as.matrix(fst_mat_mean),col=rev(COL2('RdYlBu',10)),cl.pos='b',tl.cex=2,cl.cex=2,tl.col=groupcolors,col.lim=c(0,0.03),is.corr=F,addCoef.col = 'black',number.cex=2,diag=FALSE,number.digits=4)
+dev.off()
+
+#Fst results with varying sample sizes number and missingness
+fst_df=intersect(list.files(paste0(path,"Stats/"),"*.pairwise.log",full.names=T),list.files(paste0(path,"Stats/"),"_N",full.names=T)) %>% lapply(function(x)read.table(x,skip=17,nrow=2,fill=T,row.names=NULL) %>% mutate(MAF=0.01,MISS=as.numeric(sub("mis","",sapply(strsplit(x,"_"),"[[",3))),N=as.numeric(sub("N","",sapply(strsplit(x,"_"),"[[",6))))) %>% bind_rows()
+
+fst_df_names=intersect(list.files(paste0(path,"Stats/"),"*.pairwise.log",full.names=T),list.files(paste0(path,"Stats/"),"_N",full.names=T)) %>% lapply(function(x)read.table(x,skip=6,nrow=2,fill=T,row.names=NULL)) %>% bind_rows() %>% mutate(POP=sub(".*clean_","",sub("_Fst.*","",basename(V2)))) %>% mutate(Comparison=rep(seq(1,144),each=2),POP_N=rep(c("POP1","POP2"),144)) %>% dplyr::select(c(POP_N,POP,Comparison)) %>% pivot_wider(names_from="POP_N",values_from = "POP")
+
+fst_df=data.frame(Index="Fst",Type=fst_df$and,Value=fst_df$estimates.,MAF=fst_df$MAF,MISS=fst_df$MISS,N=fst_df$N)
+
+#Edit group names 
+group_labels
+
+#Extract non wieghted estimator
+fst_df_mean=cbind(fst_df %>% subset(Type=="mean"),fst_df_names)
+fst_df_mean$MISS=as.factor(fst_df_mean$MISS)
+
+#Plot Fst values for each pair group with varying Number of individuals and missingness
+fst_plot = ggplot(data = fst_df_mean %>% subset(MISS!=5), aes(x=N, y=Value, colour = MISS)) + geom_point(size=5) + geom_line(size=1.5) + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) +facet_grid(POP1~POP2,switch="y",labeller=as_labeller(group_labels)) + theme(axis.text.x = element_text(size=25),axis.text.y = element_text(size=25),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=25),legend.title=element_text(size=30),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm"),legend.position="right") + theme(strip.background = element_blank(),strip.text = element_text(size=20,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="N samples",y="Fst",color="% missingness") + scale_x_continuous(breaks=c(10,30,50,70),limits = c(0,80)) + scale_y_continuous(breaks=c(0.0025,0.005,0.0075,0.010,0.0125,0.015),limits=c(0,0.015))
+
+ggsave(fst_plot ,filename=paste0(figpath,"Pop_differentiation_diversity/Fst_pairwise_vcftools_Group1234_MAF0.01_varying_N_MISS.png"),width=16,height=13,dpi=320)
+
+```
+
+#Plot Het results for Groups 1,2,3,4
+```{r}
+group_labels=c("Group1"="Central/North GBR","Group2"="South GBR","Group3"="NC","Group4"="CB")
+
+#Get het results for various number of individuals and each group
+unvariant_df <- intersect(list.files(paste0(path, "Stats/Het/"), "*unvariant_sites_counts", full.names = TRUE),list.files(paste0(path, "Stats/Het/"), "rep", full.names = TRUE)) %>% 
+  lapply(function(x) {
+    read.table(x, header = FALSE, col.names = c("sample", "N_unvar_sites")) %>% 
+      mutate(
+        Group = sapply(strsplit(basename(x), "_"), "[[", 9), 
+        N = as.numeric(sub("_.*", "", sub(".*_N", "", basename(x)))),
+        Run = as.numeric(sub("_.*", "", sub(".*_rep", "", basename(x))))
+      )
+  }) %>% 
+  bind_rows() %>% mutate(INDV_N=paste0(sample,"_",N))
+
+# het_df <- intersect(list.files(paste0(path, "Stats/Het/"), "*.het", full.names = TRUE),list.files(paste0(path, "Stats/Het/"), "rep", full.names = TRUE)) %>% 
+#   lapply(function(x) {
+#     read.table(x, header = T) %>% 
+#       mutate(N = as.numeric(sub("_.*", "", sub(".*_N", "", basename(x)))),
+#              Group = sapply(strsplit(basename(x), "_"), "[[", 9),
+#              Run = as.numeric(sub(".het.*", "", sub(".*_rep", "", basename(x))))
+#              )
+#   }) %>% 
+#   bind_rows() %>% mutate(INDV_N=paste0(INDV,"_",N))
+
+het_df <- intersect(list.files(paste0(path, "Stats/Het/"), "*.het", full.names = TRUE), 
+                    list.files(paste0(path, "Stats/Het/"), "rep", full.names = TRUE)) %>% 
+  lapply(function(x) {
+    df <- read.table(x, header = TRUE)
+    
+    # Skip files that contain only the header
+    if (nrow(df) == 0) return(NULL)
+    
+    df %>%
+      mutate(N = as.numeric(sub("_.*", "", sub(".*_N", "", basename(x)))),
+             Group = sapply(strsplit(basename(x), "_"), "[[", 9),
+             Run = as.numeric(sub(".het.*", "", sub(".*_rep", "", basename(x)))))
+  })
+
+# Remove NULL elements manually
+het_df <- do.call(rbind, het_df[!sapply(het_df, is.null)])
+
+#Only keep complete runs
+unvariant_df=unvariant_df %>% mutate(Group_N_Run=paste0(Group,"_",N,"_",Run))
+het_df=het_df %>% mutate(Group_N_Run=paste0(Group,"_",N,"_",Run))
+
+het_df=het_df %>% merge(unvariant_df %>% dplyr::select(INDV_N,N_unvar_sites,Group_N_Run),by="Group_N_Run") %>% mutate(O.Het=(N_SITES-O.HOM.)/(N_SITES+N_unvar_sites))
+het_df$Group=factor(het_df$Group,levels=c("Group1","Group2","Group3","Group4"))
+het_df$N=factor(het_df$N)
+
+#Average values over runs 
+het_df=het_df %>% group_by(Group,N,Group_N_Run) %>% dplyr::summarize(meanO.Het=mean(O.Het))
+
+#Plot variation in het with number of samples for each group
+popcolors<-c("#016765","#079CEF","#FFCC33","#CC791E")
+names(popcolors)=c("Group3","Group4","Group2","Group1")
+
+het_plot = ggplot(data = het_df , aes(x=N, y=meanO.Het,fill=Group),color="black")+ geom_boxplot(position=position_dodge(0.95))   + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) +facet_wrap(~Group,labeller=as_labeller(group_labels)) + theme(axis.text.x = element_text(size=25),axis.text.y = element_text(size=25),axis.title.y = element_text(size=30),axis.title.x = element_text(size=30,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=25),legend.title=element_text(size=30),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm"),legend.position="none") + theme(strip.background = element_blank(),strip.text = element_text(size=20,face="italic"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.3,"cm"),panel.spacing.y = unit(1,"cm")) + labs(x="N samples",y="Observed Heterosigosity") + scale_fill_manual(values=popcolors)
+
+
+ggsave(het_plot ,filename=paste0(figpath,"Pop_differentiation_diversity/Het_Group1234_0MISS.png"),width=16,height=13,dpi=320)
+```
+
+#Summarize pi, fst and Dxy results from PIXY for each population pair 
+```{r}
+#Compare to pixy pi
+path="C:/Users/Hugo/Documents/Data/Genomics/pixy/"
+pi_pixy=read.table(paste0(path,'pixy_pi.txt'),header=T)
+
+#Get average of pi across the whole genome 
+pi_pixy=pi_pixy %>% subset(!is.na(count_comparisons) & count_comparisons!=0)
+pi_pixy_average=data.frame()
+for(p1 in unique(pi_pixy$pop)){
+    pi_pixy_sub=pi_pixy %>% subset(pop==p1)
+    pi=sum(pi_pixy_sub$count_diffs)/sum(pi_pixy_sub$count_comparisons)
+    pi_pixy_average=rbind(pi_pixy_average,data.frame(Pop=p1,Pi=pi))
+}
+
+write.table(pi_pixy_average,paste0(path,"pixy_pi_group_average.txt"),quote=F,row.names=F)
+
+#Get average of Dxy 
+fst_pixy=read.table(paste0(path,'pixy_fst.txt'),header=T)
+dxy_pixy=read.table(paste0(path,'pixy_dxy.txt'),header=T)
+
+#Remove NA values
+dxy_pixy=dxy_pixy %>% subset(!is.na(count_comparisons) & count_comparisons!=0)
+fst_pixy=fst_pixy %>% subset(!is.na(avg_wc_fst))
+
+#Average values for each pairwise comparison
+#Following pixy authors recommandation
+
+i=1
+dxy_pixy_average=data.frame()
+for(p2 in unique(dxy_pixy$pop2)){
+  for(p1 in unique(dxy_pixy$pop1)){
+    dxy_pixy_sub=dxy_pixy %>% subset(pop1==p1 & pop2 == p2)
+    dxy=sum(dxy_pixy_sub$count_diffs)/sum(dxy_pixy_sub$count_comparisons)
+    dxy_pixy_average=rbind(dxy_pixy_average,data.frame(Comparison=i,POP1=p1,POP2=p2,dxy=dxy))
+    i=i+1
+  }
+}
+
+#Convert to matrix format 
+dxy_pixy_average_mat=as.data.frame(matrix(0,nrow=4,ncol=4))
+colnames(dxy_pixy_average_mat)=c("Group1","Group2","Group3","Group4")
+rownames(dxy_pixy_average_mat)=c("Group1","Group2","Group3","Group4")
+for(i in 1:nrow(dxy_pixy_average_mat)){
+  for(j in 1:ncol(dxy_pixy_average_mat)){
+    if(i!=j){
+      dxy1=dxy_pixy_average$dxy[dxy_pixy_average$POP1==rownames(dxy_pixy_average_mat)[i] & dxy_pixy_average$POP2==colnames(dxy_pixy_average_mat)[j]]
+    dxy2=dxy_pixy_average$dxy[dxy_pixy_average$POP2==rownames(dxy_pixy_average_mat)[i] & dxy_pixy_average$POP1==colnames(dxy_pixy_average_mat)[j]]
+    if(length(dxy1)==1){
+      dxy_pixy_average_mat[i,j]=dxy1
+    }else{
+      dxy_pixy_average_mat[i,j]=dxy2
+    }
+    
+    }else{
+      dxy_pixy_average_mat[i,j]=0
+    }
+    
+  }
+}
+
+write.table(dxy_pixy_average_mat,paste0(path,"pixy_Dxy_average.txt"),quote=F)
+
+#Average pixy Fst values
+i=1
+fst_pixy_average=data.frame()
+for(p2 in unique(fst_pixy$pop2)){
+  for(p1 in unique(fst_pixy$pop1)){
+    fst_pixy_sub=fst_pixy %>% subset(pop1==p1 & pop2 == p2) %>% subset(!is.na(avg_wc_fst))
+    
+    #Compute weighted average Fst (by number of SNPs in each window)
+    fst=sum(fst_pixy_sub$avg_wc_fst*fst_pixy_sub$no_snps)/sum(fst_pixy_sub$no_snps)
+    fst_pixy_average=rbind(fst_pixy_average,data.frame(Comparison=i,POP1=p1,POP2=p2,fst=fst))
+    i=i+1
+  }
+}
+
+
+#Convert to matrix format 
+fst_pixy_average_mat=as.data.frame(matrix(0,nrow=4,ncol=4))
+colnames(fst_pixy_average_mat)=c("Group1","Group2","Group3","Group4")
+rownames(fst_pixy_average_mat)=c("Group1","Group2","Group3","Group4")
+for(i in 1:nrow(fst_pixy_average_mat)){
+  for(j in 1:ncol(fst_pixy_average_mat)){
+    if(i!=j){
+      fst1=fst_pixy_average$fst[fst_pixy_average$POP1==rownames(fst_pixy_average_mat)[i] & fst_pixy_average$POP2==colnames(dxy_pixy_average_mat)[j]]
+    fst2=fst_pixy_average$fst[fst_pixy_average$POP2==rownames(fst_pixy_average_mat)[i] & fst_pixy_average$POP1==colnames(fst_pixy_average_mat)[j]]
+    if(length(fst1)==1){
+      fst_pixy_average_mat[i,j]=fst1
+    }else{
+      fst_pixy_average_mat[i,j]=fst2
+    }
+    
+    }else{
+      fst_pixy_average_mat[i,j]=0
+    }
+    
+  }
+}
+
+write.table(fst_pixy_average_mat,paste0(path,"pixy_Fst_average.txt"),quote=F)
+```
+
+
+
+#Get inbreeding coefficients for each group 
+```{r}
+het_df <- list.files(paste0(path, "Stats/Het/"), "10mis", full.names = TRUE) %>% 
+  lapply(function(x) {
+    read.table(x, header = T) %>% 
+      mutate(N = as.numeric(sub("_.*", "", sub(".*_N", "", basename(x)))),Group=sub(".*_", "", sub(".het", "", basename(x))))
+  }) %>% 
+  bind_rows() %>% mutate(INDV_N=paste0(INDV,"_",N))
+
+het_df %>% group_by(Group) %>%  dplyr::summarize(Fis=mean(F),sdFis=sd(F))
+```
+
+
+############# Trash ################
+
+#### This scripts uses mapped BAM files to produce basic statistics on A.spathulata WGS data ####   
+# This includes coverage, base quality, sequencing depth, mapping quality ...
+
+#Load samples metadata (A.spathulata 2022 only)
+```{r}
+meta=read.csv('/home/hdenis/Data/GBR_data/Coral colony metadata from the ECT1_RRAP_Aspathulata_2022.csv')
+
+site_meta=meta %>% group_by(locationID) %>% dplyr::summarize(Lat=mean(as.numeric(decimalLatitude),na.rm=T),Lon=mean(as.numeric(decimalLongitude),na.rm=T))
+```
+
+#Load additional data 
+```{r}
+fst=list.files('/nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/Genome_scans/',pattern="pairwise") %>% lapply(function(x) read.table(x)) %>% bind_rows()
+```
+
+#Compute pairwise geographic distance between sampled reefs (in km)
+```{r}
+havdist=data.frame()
+for(i in 1:nrow(site_meta)){
+  for(j in 1:nrow(site_meta)){
+    if(i!=j){
+      d=distHaversine(site_meta[i,c(3,2)],site_meta[j,c(3,2)])
+      havdist=rbind(havdist,data.frame(Site.name1=site_meta$locationID[i],Site.name2=site_meta$locationID[j],Haversine_dist=d/1000))
+    }
+}
+}
+havdist$ID=row.names(havdist)
+head(havdist)
+
+havdist %>% ggplot(aes(x=ID,y=Haversine_dist)) + geom_point(size=3)
+```
+
+
+#Make tanglegram figure with hierachical clustering of symbionts kmer matrix for the same set of samples
+```{r}
+library(dendextend)
+
+#Load kmer distance matrix
+kmer_mat=as.matrix(read.table(paste0("C:/Users/Hugo/Documents/Data/symbionts/","D2s_50M_dist_matrix_aspat_clean.txt"),check.names = F))
+
+symb_clusters=read.table(paste0("C:/Users/Hugo/Documents/Data/symbionts/","Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
+
+rerooted_bootstrap_file<-paste0(path, "RAxML/RAxML_bipartitions.aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70_final_tree_GAMMA_rerooted_pruned.nwk")
+
+#Load RAxML tree of host lineages
+rerooted_bootstrap_tree=DECIPHER::ReadDendrogram(file=rerooted_bootstrap_file) 
+old_labels=labels(rerooted_bootstrap_tree)
+new_labels=sub(".*Aspat-","",old_labels)
+new_labels=sub(" .*","",new_labels)
+rerooted_bootstrap_tree <- set_labels(rerooted_bootstrap_tree, new_labels)
+
+rerooted_bootstrap_tree=prune(rerooted_bootstrap_tree,c("CBHE-1736","CBHE-1776","CBLM-1600","CBLM-1655","CB3-8"))
+
+write.tree(as.phylo(rerooted_bootstrap_tree), file = paste0(path, "RAxML/RAxML_bipartitions.aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70_final_tree_GAMMA_rerooted_pruned.nwk"))
+
+#Retain only samples that have been correctly assinged botha host cluster and a symbiont cluster 
+samples_plot=intersection(rerooted_bootstrap_tree$tip.label,)
+
+
+
+
+
+#Create a subset of the matrix to retain samples used in RAxML analyses for the host
+samples_subset=rerooted_bootstrap_tree$tip.label
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% samples_subset,colnames(kmer_mat) %in% samples_subset]
+
+kmer_mat_sub=kmer_mat_sub[!rownames(kmer_mat_sub) %in% rm,!colnames(kmer_mat_sub) %in% rm]
+
+#Perform hierachical clustering on the pcoa axis based on D2S matrix
+K=10
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+pcoa_mat_sub=pcoa_scores[,2:3]
+
+hc2 = hclust(dist(pcoa_mat_sub))
+hc2_dendro=as.dendrogram(hc2)
+
+#Same with bootstrap
+hc2_boot <- pvclust(t(pcoa_mat_sub), method.hclust="average",method.dist="euclidean", nboot=100)
+hc2_dendro=as.dendrogram(hc2_boot)
+
+#Load details of cluster assignation
+symb_clusters=read.table(paste0("C:/Users/Hugo/Documents/Data/symbionts/","Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
+
+#Get names of samples for which a symbionts could not be assigned
+rm=symb_clusters$wgsID_short[symb_clusters$wgsID_short %in% labels(hc2_dendro) & is.na(symb_clusters$ITS2)]
+
+hc2_dendro=prune(hc2_dendro,rm)
+
+dend2<- hc2_dendro %>%
+  dendextend::set("labels_cex",2)%>%color_branches(col = cluster_colors[unlist(lapply(labels(hc2_dendro), 
+                                                      function(x) { symb_clusters[symb_clusters$wgsID_short == x, "ITS2"] }))]) %>%  
+  hang.dendrogram(hang = -1)
+
+
+
+#Load RAxML tree of host lineages
+rerooted_bootstrap_tree=DECIPHER::ReadDendrogram(file=rerooted_bootstrap_file) 
+
+#Edit labels 
+old_labels=labels(rerooted_bootstrap_tree)
+new_labels=sub(".*Aspat-","",old_labels)
+new_labels=sub(" .*","",new_labels)
+rerooted_bootstrap_tree <- set_labels(rerooted_bootstrap_tree, new_labels)
+
+rerooted_bootstrap_tree=prune(rerooted_bootstrap_tree,c("CBHE-1736","CBHE-1776","CBLM-1600","CBLM-1655","CB3-8",rm))
+
+#Edit labels of the dendrogram
+group_colors=c("#016765","#079CEF","#FFCC33","#CC791E")
+names(group_colors)=c("Group3","Group4","Group2","Group1")
+
+dend1 <- rerooted_bootstrap_tree %>%
+  set("labels_cex", 2) %>%  # Set label size
+  color_branches(col = group_colors[unlist(lapply(labels(rerooted_bootstrap_tree), 
+                                                      function(x) { pop[pop$sample == x, "Group"] }))]) %>%  
+  hang.dendrogram(hang = -1)
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+
+
+# Now, create a tanglegram using the dendrogram objects
+dendCombined <- dendlist(dend1, dend2)
+
+
+png(height=465, width=1000, file=paste0(figpath,"Host_RAxML_symbionts_kmer_tanglegram.png"), res=300, units='mm')
+dendCombined2<-dendCombined %>%
+  untangle(method = "step2side") %>%
+  tanglegram(common_subtrees_color_lines = F,
+             highlight_distinct_edges = F,
+             highlight_branches_lwd = F,
+             common_subtrees_color_lines_default_single_leaf_color = "black",
+             lwd = 2,
+             sort = F,add_points=T,columns_width=c(6,2,6),edge.lwd=4,left_dendo_mar=c(2.1,5,2.1,20),right_dendo_mar=c(2.1,20,2.1,5))
+dev.off()
+
+```

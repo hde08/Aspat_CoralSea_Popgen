@@ -62,7 +62,8 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-##10.4 Perform joint genotyping with Genotype GVCF
+########################################################## JOINT GENOTYPING ###################################################################
+#This scripts performs joint genotyping with Genotype GVCF
 
 cd /nvme/disk0/lecellier_data/WGS_GBR_data/
 INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/"
@@ -73,7 +74,7 @@ REF_3="/nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/Amil_scaffolds_final_
 REF_NAME="Amilleporav3"
 
 
-#10.41 Read from a list of intervals  (total of 36 intervals)
+#1. Read from a list of intervals  (total of 36 intervals)
 #Chromosomes 1-4 divided in 4 intervals
 #Chromosomes 5-14 divided in 2 inverals 
 INTERVALS_FILE="/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/chromosome_intervals.txt"
@@ -89,7 +90,7 @@ CONTIG_NAME=${INTERVALS_NAMES[$((${SLURM_ARRAY_TASK_ID}-1))]}
 #OPTIONS : 
 #--include-non-variant-sites true : output non-variable sites
 #--only-output-calls-starting-in-intervals : makes sure that only sites starting within the specified intervals are reported
-#However sites whose end is located outside the interval are reported as long as they start within
+#However sites whose end is located outside the interval are reported as long as they start within the interval. This ensures no sites are lost when concatenating  chromosomes vcf files into a single vcf file 
 
 start=`date +%s`
 echo Array Id : ${SLURM_ARRAY_TASK_ID} Chromosome : ${CONTIG} : start joint genotyping
@@ -101,6 +102,6 @@ echo ${CONTIG} : Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
 
 #Check changes in variants processed over time 
-#cat /home/hdenis/Slurm/gatk_7338_1.e | grep 'ProgressMeter' > /nvme/disk0/lecellier_data/WGS_GBR_data/Vcf_performance.txt
+cat /home/hdenis/Slurm/gatk_7338_1.e | grep 'ProgressMeter' > /nvme/disk0/lecellier_data/WGS_GBR_data/Vcf_performance.txt
 
 

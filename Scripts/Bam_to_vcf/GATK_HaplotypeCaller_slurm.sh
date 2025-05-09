@@ -62,14 +62,15 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-
-#### 11. Perform genotype hard callig variants using gatk v4.5.0.0
-#mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/
+########################################################## SAMPLE VARIANT CALLING ###################################################################
+#This scripts performs genotype hard callig variants using gatk v4.5.0.0
+ 
+mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/
 cd /nvme/disk0/lecellier_data/WGS_GBR_data/
 INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
 OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/"
 
-#Get filelist of clean aspat files (good quality samples, no bad taxID)
+#Get filelist of clean aspat files, after removal of low quality samples or samples misID
 readarray -t BAM_FILES <  $INDIR/aspat_bam_clean.filelist.txt
 
 
@@ -85,16 +86,13 @@ REF_NAME="Amilleporav3"
 #List with chromosome names 
 readarray -t CHROMOSOMES < "/nvme/disk0/lecellier_data/WGS_GBR_data/ANGSD_files/chromosomes_header.txt"
 
-#10.1 Create samtools genome index and GATK reference dictionary
-
-#cd /nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/
-#
-#gatk CreateSequenceDictionary -R $REF_3
-#
-#samtools faidx $REF_3
+#1. Create samtools genome index and GATK reference dictionary
+cd /nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/
+gatk CreateSequenceDictionary -R $REF_3
+samtools faidx $REF_3
 
 
-#10.2 Call genotypes per sample using Haplotype Caller gatk v4.5.0.0
+#2. Call genotypes per sample using Haplotype Caller gatk v4.5.0.0
 
 #Genotype calling on complete reference (chr + scaffolds)
 OPTIONS="-ERC GVCF"
@@ -117,7 +115,7 @@ else
 fi
 
 #Validate format 
-#gatk ValidateVariants -V /nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/RRAP-ECT01-2022-Aspat-CBHE-1718_L1_pe_aln_Amilleporav3.g.vcf.gz --validation-type-to-exclude ALL
+gatk ValidateVariants -V /nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/RRAP-ECT01-2022-Aspat-CBHE-1718_L1_pe_aln_Amilleporav3.g.vcf.gz --validation-type-to-exclude ALL
 
 
   

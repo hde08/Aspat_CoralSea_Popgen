@@ -57,20 +57,23 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
+
+########################################################## READS MAPPING ###################################################################
+#This scripts serves to map reads to the reference genome (A.millepora v3 reference genome)
+#Add link: 
+
 #### 4. Map to reference genome using Bwa mem (version 0.7.17-r1188) with default parameters
 
-
 cd /nvme/disk0/lecellier_data/WGS_GBR_data/
-#mkdir Aligned_files/
+mkdir Aligned_files/
+
 #GBR:
-#INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/"
-#OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
+INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/"
+OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
 
 #NC
 INDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Trimmed_files/Trim_2nd_round/"
 OUTDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Aligned_files/"
-
-
 
 #List reference genomes to be tested 
 REF_3="/nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/Amil_scaffolds_final_v3.fa"
@@ -78,11 +81,10 @@ REF_3="/nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/Amil_scaffolds_final_
 #Align only against A.millepora v3 reference genome 
 REF_NAME="Amilleporav3"
 
-#### 4.1. Index reference genomes 
-#bwa index $REF_3 #A.spathulata v3
+#1. Index reference genomes 
+bwa index $REF_3 #A.spathulata v3
 
 FILES=($INDIR/*_R1_paired.fastq.gz)
-#FILES=("${FILES[@]:75:500}")
 
 #Associate filename with array index 
 FILENAME=${FILES[$((${SLURM_ARRAY_TASK_ID}-1))]}
@@ -94,26 +96,23 @@ then
   
   start=`date +%s`
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} : start processing
-  #Filename is associated with array index 
   
-  #### 4.2. Map to reference genome
+  #2. Map to reference genome
   bwa mem -t 5 ${REF_3} -o "${OUTDIR}${BASE}_pe_aln_${REF_NAME}.sam" "${INDIR}${BASE}_R1_paired.fastq.gz" "${INDIR}${BASE}_R2_paired.fastq.gz" 
   
-  #### 4.3. Create sorted bam  
+  #3. Create sorted bam  
   samtools view -b --threads 5 "${OUTDIR}${BASE}_pe_aln_${REF_NAME}.sam" | samtools sort --threads 5  -O BAM -o "${OUTDIR}${BASE}_pe_aln_${REF_NAME}_UNDEDUP.bam"
   
   end=`date +%s`
   echo ${BASE} : Execution time was `expr $(( ($end - $start) / 60))` minutes.
   
-  ##### 4.4. removed temporary files
+  #4. removed temporary files
   rm "${OUTDIR}${BASE}_pe_aln_${REF_NAME}.sam"	
-  
-  #Remove the trimmed input files (temporarly saved on tgt_bck2)
-  #rm "${INDIR}${BASE}_R1_paired.fastq.gz" 
-  #rm "${INDIR}${BASE}_R2_paired.fastq.gz"
-  #rm "${INDIR}${BASE}_R1_unpaired.fastq.gz"
-  #rm "${INDIR}${BASE}_R2_unpaired.fastq.gz"
-  #rm "${INDIR}${BASE}_sum.txt"
+  rm "${INDIR}${BASE}_R1_paired.fastq.gz" 
+  rm "${INDIR}${BASE}_R2_paired.fastq.gz"
+  rm "${INDIR}${BASE}_R1_unpaired.fastq.gz"
+  rm "${INDIR}${BASE}_R2_unpaired.fastq.gz"
+  rm "${INDIR}${BASE}_sum.txt"
   
   
     

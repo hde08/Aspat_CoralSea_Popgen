@@ -24,7 +24,7 @@
 #SBATCH --ntasks-per-node=1     # use 1 for single and multi core jobs
 #SBATCH --cpus-per-task=2		# number of cores per job
 
-#SBATCH --array=7-350%15        	# job array
+#SBATCH --array=1-700%10       	# job array
 
 ### Ressources
 
@@ -57,15 +57,16 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-#6. Extract unmapped reads (non host reads) from bam files to separate files 
-
-cd /nvme/disk0/lecellier_data/WGS_NC_data/
+########################################################## UNMAPPED READS EXTRACTION ###################################################################
+#This scripts serves to extract unmapped reads (non host reads) from bam files to store them in a separate file 
 
 #GBR
-#INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
-#OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/BAM_statistics/"
+cd /nvme/disk0/lecellier_data/WGS_GBR_data/
+INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
+OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/BAM_statistics/"
 
 #NC
+cd /nvme/disk0/lecellier_data/WGS_NC_data/
 INDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Aligned_files/"
 OUTDIR="/nvme/disk0/lecellier_data/WGS_NC_data/BAM_statistics/"
 
@@ -101,7 +102,7 @@ else
 
 fi
 
-# Notes:
+# Parameters:
 # -f 4: extract all unmapped reads
 # -f12: extract only the reads where read 1 is unmapped AND read 2 is unmapped (= both mates are unmapped). Applies only to paired reads.
 

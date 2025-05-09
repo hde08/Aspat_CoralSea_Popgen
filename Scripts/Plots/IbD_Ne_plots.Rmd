@@ -1,0 +1,70 @@
+---
+title: "IbD & Ne plots"
+author: "Hugo DENIS"
+date: "2025-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Script to plot the results of Isolation by Distance analyses in spagedi and estimates of effective population size (Ne) using LDNe. 
+
+#Load packages
+```{r}
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+```
+
+#Load the data
+```{r}
+path="C:/Users/Hugo/Documents/Data/Genomics/IBD/Kat_results/dispersal_methods-results/"
+figpath="C:/Users/Hugo/Documents/Figures/Genomics/IbD_Ne/"
+
+beta_values=read.table(paste0(path,"B_values-lognormal_denis.txt"),header=T,col.names=c("beta"))
+Ne_values=read.table(paste0(path,"Ne_values-gamma_denis.txt"),header=T,col.names=c("Ne"))
+sigma_values=read.table(paste0(path,"Sigma_values_denis.txt"),header=T,col.names=c("sigma"))
+
+#Convert sigma in km 
+sigma_values$sigma=sigma_values$sigma/1000
+
+#Compute median and sd for each parameter based on their modeled distribution 
+
+median_beta=median(beta_values$beta)
+median_Ne=median(Ne_values$Ne)
+median_sigma=median(sigma_values$sigma)
+
+sd_beta=sd(beta_values$beta)
+sd_Ne=sd(Ne_values$Ne)
+sd_sigma=sd(sigma_values$sigma)
+```
+
+#Create function to plot distribution
+```{r}
+hist_custom=function(df,var,var_label,binw,median,sd,vm,r){
+  hist<- df %>%
+    ggplot(aes_string(x = var)) + 
+    geom_histogram(fill="grey", binwidth = binw, alpha = 1,color="black") +
+    theme_classic()  + 
+    theme(plot.background = element_rect(fill="white",color="transparent"),panel.background = element_rect(fill="white",color="black"),axis.text.x=element_text(color="black",size=20),axis.text.y=element_text(color="black",size=20),axis.title.x = element_text(color="black",size=30),axis.title.y = element_text(color="black",size=25)) +
+    labs(x = var_label, y = "#") +
+    geom_vline(xintercept = median,linewidth=1.5,color="#092347") +
+    annotate("text", x = median +vm, y = 20, adj = 1,
+             label = paste0(round(median, r)," \u00B1 ",sd), size = 10)
+}
+```
+
+#Plot distribution for each parameter
+```{r}
+plot1=hist_custom(beta_values,"beta","\u03B2",0.00001,median_beta,round(sd_beta, 6),0.00012,5)
+plot2=hist_custom(Ne_values,"Ne",expression(N[e]),500,median_Ne,round(sd_Ne, 0),3500,0)
+plot3=hist_custom(sigma_values,"sigma","\u03C3",10,median_sigma,round(sd_sigma, 0),50,0)
+
+#Group plots together and save
+global_plot=cowplot::ggdraw() +draw_plot(plot1,x=0.01,y=0,width=0.32,height=1) +draw_plot(plot2,x=0.34,y=0,width=0.32,height=1) +draw_plot(plot3,x=0.67,y=0,width=0.32,height=1) + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b","c"),x=c(0,0.33,0.66),y=c(1,1,1),size=35)
+
+ggsave(global_plot,filename=paste0(figpath,"Figure_2.png"),width=22,height=8,dpi=500)
+```
+

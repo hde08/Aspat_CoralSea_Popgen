@@ -1,0 +1,872 @@
+---
+title: "dbRDA"
+author: "Hugo DENIS"
+date: "2025-03-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Script to perform db-RDA on host and symbiont population structure from A.spathulata across the Coral Sea
+
+#Load packages
+```{r}
+library(vegan)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(parallel)
+library(adespatial)
+library(geosphere)
+```
+
+
+###1. Perform db-RDA on symbiont populations structure 
+
+#Load the data 
+```{r}
+path="C:/Users/Hugo/Documents/Data/symbionts/"
+path_save="C:/Users/Hugo/Documents/Figures/Symbionts/dbRDA/"
+
+
+#Load kmer D2S matrix
+kmer_mat=as.matrix(read.table(paste0(path,"D2s_50M_dist_matrix_aspat_clean.txt"),check.names = F))
+
+#Load number of symbiont reads recovered in each sample
+#We filter out samples that had initially less bp than 50M (=340000*150, the threshold at which we downsampled all samples)
+Nreads=read.table(paste0(path,"Mapped_symbiont_read_counts_fasta.txt"),col.names=c("sample","Nreads")) %>% mutate(wgsID_short=sub("_.*","",sub(".*Aspat-","",basename(sample))))
+kmer_mat=kmer_mat[rownames(kmer_mat) %in% Nreads$wgsID_short[Nreads$Nreads>340000],colnames(kmer_mat) %in% Nreads$wgsID_short[Nreads$Nreads>340000]]
+
+#Exclude one sample that is missing spatial coordinates
+kmer_mat=kmer_mat[rownames(kmer_mat)!="CBLM-1655",colnames(kmer_mat)!="CBLM-1655"]
+
+
+
+
+#Environmental variables
+env=read.csv("C:/Users/Hugo/Documents/Data/Env_data_all/all_env_metrics_aspat_sites.csv")
+
+#Host principal components
+host_pc=read.table("C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Host_PCs_aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2.txt",header=T)
+
+
+#Other metadata (reef level and colony level)
+meta_colony=read.table("C:/Users/Hugo/Documents/Data/Colony_metadata_Aspat_GBR_NC.txt",header=T,sep="\t")
+meta_site=openxlsx::read.xlsx("C:/Users/Hugo/Documents/Data/Summary_PhD_sites.xlsx",sheet = "Sheet 1")
+```
+
+#Compute dbMem eigenvectors for the subset of colonies used in the analysis
+#Following the method of Borcard & Legendre (2002, 2004)
+```{r}
+rownames(meta_colony)=meta_colony$wgsID_short
+coord=meta_colony[rownames(kmer_mat),c("wgsID_short","Lon","Lat")]
+coord$Lon=as.numeric(coord$Lon)
+coord$Lat=as.numeric(coord$Lat)
+
+#Discard individuals that have missing Lon Lat (1 colony)
+coord=coord %>% subset(!is.na(Lon) & !is.na(Lat))
+
+#At NC and CB sites colonies spatial coordinates were not collected and only the sites coordinates were used
+#As this will create an issue in the dbMem computation, we will jitter points around the site mean (by a distance of maximum 300m which si the size of sites that were explored)
+distance_limit=300
+jittered_coord=coord
+for(i in 1:nrow(coord)){
+  if(coord$wgsID_short[i] %in% meta_colony$wgsID_short[meta_colony$Country=="New_Caledonia"]){
+    lat_mean <- coord[i, "Lat"]
+    lon_mean <- coord[i, "Lon"]
+    
+    #Random distance and angle in radians
+    distance <- runif(1, min = 0, max = distance_limit)
+    angle <- runif(1, min = 0, max = 2 * pi)
+    
+    # Jittered coordinates (Lat, Lon) using polar coordinates (distance and angle)
+    lat_jitter <- lat_mean + (distance / 111320) * cos(angle) # Approximate conversion to degrees
+    lon_jitter <- lon_mean + (distance / (111320 * cos(lat_mean * pi / 180))) * sin(angle) # Adjusted for latitude
+    
+    jittered_coord[i, "Lat"] <- lat_jitter
+    jittered_coord[i, "Lon"] <- lon_jitter
+    
+  }
+}
+
+#Save jittered coordinates
+write.table(jittered_coord,paste0(path,"Jiitered_coordinates_symbiont_subset.txt"),row.names=F)
+
+#Compute spatial distance using haversine distance (more accurate than euclidean distance for spatial coordinates)
+n <- nrow(jittered_coord)
+hav_matrix <- matrix(0, nrow = n, ncol = n)
+rownames(hav_matrix) <- rownames(jittered_coord)
+colnames(hav_matrix) <- rownames(jittered_coord)
+
+# Fill the matrix with Haversine distances
+for(i in 1:n){
+  for(j in 1:n){
+    if(i != j){
+      d <- distHaversine(jittered_coord[i, c("Lon", "Lat")], jittered_coord[j, c("Lon", "Lat")])
+      hav_matrix[i, j] <- d / 1000  # convert meters to kilometers
+    }
+  }
+}
+
+# Convert to distance matrix object
+hav_dist <- as.dist(hav_matrix)
+
+
+#Save distance object 
+saveRDS(hav_dist,paste0(path,"Haversine_distance_matrix_symbiont_subset.rds"))
+
+#Run dbmem
+dbmem_vars <- adespatial::dbmem(hav_dist)
+dbmem_vars$wgsID_short=rownames(dbmem_vars)
+
+#Save dbMems values ( 4 eigenvectors are found)
+saveRDS(dbmem_vars,paste0(path,"dbMems_symbiont_subset.rds"))
+
+dbmem_vars=readRDS(paste0(path,"dbMems_symbiont_subset.rds"))
+dbmem_vars$wgsID_short=rownames(dbmem_vars)
+
+# Eigenvalues
+eigenvalues <- attributes(dbmem_vars)$values
+
+# Proportion of variance explained
+var_explained <- eigenvalues / sum(eigenvalues)
+
+# Cumulative variance explained
+cumulative_var_explained <- cumsum(var_explained)
+
+plot(seq(1,14),cumulative_var_explained)
+
+# Print eigenvalues and cumulative variance explained
+print(data.frame(eigenvalues, var_explained, cumulative_var_explained))
+
+#4 dbMems eigenvectors explain 90% of the variance 
+
+
+#Compute dbMems for Group1 (to delete
+ hav_dist=readRDS(paste0("C:/Users/Hugo/Documents/Data/Genomics/","Haversine_distance_matrix_symbiont_subset.rds"))
+# 
+# saveRDS(dbmem_vars,paste0("C:/Users/Hugo/Documents/Data/Genomics/dbRDA/","dbMems_Group1.rds"))
+
+
+
+dbmem_vars <- adespatial::dbmem(hav_dist)
+dbmem_vars$wgsID_short=rownames(dbmem_vars)
+
+# Eigenvalues
+eigenvalues <- attributes(dbmem_vars)$values
+
+# Proportion of variance explained
+var_explained <- eigenvalues / sum(eigenvalues)
+
+# Cumulative variance explained
+cumulative_var_explained <- cumsum(var_explained)
+
+plot(seq(1,14),cumulative_var_explained)
+
+# Print eigenvalues and cumulative variance explained
+print(data.frame(eigenvalues, var_explained, cumulative_var_explained))
+
+dbmem_vars=readRDS(paste0("C:/Users/Hugo/Documents/Data/Genomics/","dbMems_symbiont_subset.rds"))
+dbmem_vars$wgsID_short=rownames(dbmem_vars)
+```
+
+#create a predictor table with all predictor variables in the same order as in the response matrix 
+```{r}
+pred=meta_colony %>% dplyr::select(wgsID_short,locationID) %>% merge(env,by.x="locationID",by.y="Site.name")
+pred=pred  %>% merge(host_pc,by="wgsID_short")
+pred=pred %>% merge(meta_site %>% dplyr::select(Site.name,Km_to_coastline),by.x="locationID",by.y="Site.name")
+pred$Km_to_coastline=as.numeric(pred$Km_to_coastline)
+pred=pred %>% merge(dbmem_vars,by="wgsID_short")
+pred=pred %>% merge(Nreads,by="wgsID_short")
+
+#Make sure only individuals in the response matrix are kept
+kmer_mat=kmer_mat[rownames(kmer_mat) %in% pred$wgsID_short,colnames(kmer_mat) %in% pred$wgsID_short]
+kmer_dist=as.dist(kmer_mat)
+rownames(pred)=pred$wgsID_short
+pred=pred[rownames(kmer_mat),]
+
+#Confirm predictors and response variables or ordered the same
+sum(rownames(pred)!=rownames(kmer_mat))
+
+#Standardize predictors 
+pred_stand=decostand(pred %>% dplyr::select(-c(wgsID_short,locationID,Country,sample)),method="standardize")
+
+#Write table of standardized predictors
+# write.table(pred_stand,paste0(path,"Standardized_predictors_symbiont_subset.rds"),row.names=F)
+```
+
+#Plot correlation between environmental predictors 
+```{r}
+# #Plot correlation between environmental predictors 
+# pred_stand_sub=pred_stand[,c("Km_to_coastline","Lat","DHW_avg_5km","Kd490_median","CF_median","DHW_collection","SST_AR","SSTmean_change","Chla_median","MMM_5km","DHW_freq_sup4_5km","DHW_max_5km","TSA_DHW_mean_5km","SST_average")]
+# cor=cor(pred_stand_sub,method="pearson")
+# 
+# library(corrplot)
+# png(height=465, width=465, file=paste0(figpath,"Env/Env_predictors_pearson_correlation.png"),res=300,units='mm')
+# corrplot::corrplot(cor, order = 'hclust', addrect = 6,col = COL2('RdYlBu', 10),cl.pos = 'b',tl.cex=2,cl.cex = 2,tl.col='black')
+# dev.off()
+
+```
+
+
+
+#Perform partial db-RDA, to separate the effect of environmental variables, geography and host population structure, several dbRDA are built
+#First we build a model using only environmental variables and we perform forward selection to retain only significant predictors 
+
+#Model 1 : Env + dbMems + Host_structure (PC1,PC2,PC3) | (Nreads)
+#Model 2 :  Env | (Nreads + Host_structure + dbMems)
+#Model 3 : Host_structure | (Nreads +Env + dbMems)
+#Model 4 : dbMems | (Nreads +Env + Host structure)
+
+```{r}
+#Alternative version to perform partial dbRDA conditioned by Nreads
+dbRDA = capscale(
+  kmer_dist ~ Km_to_coastline + Lat + DHW_avg_5km +
+    Kd490_median + CF_median + SST_AR + SSTmean_change +
+    Chla_median + MMM_5km + DHW_freq_sup4_5km + DHW_max_5km +
+    TSA_DHW_mean_5km + DHW_freq_sup8 + Condition(Nreads),
+  data = pred_stand
+)
+
+#Look at variant inflation factor and drop variables progressively, starting with the one with the highest VIF until all are below 5
+vif.cca(dbRDA)
+
+
+dbRDA = capscale(
+  kmer_dist ~ Km_to_coastline +  
+    Kd490_median + CF_median + SST_AR + MMM_5km + DHW_freq_sup4_5km + DHW_max_5km + DHW_freq_sup8+ Condition(Nreads),
+  data = pred_stand
+)
+
+#Look at variant inflation factor and drop variables progressively, starting with the one with the highest VIF until all are below 10
+vif.cca(dbRDA)
+
+
+
+#Variables sucessively removed
+#TSA_DHW_mean_5km
+#DHW_avg_5km
+#SST average
+#Chla median
+#MMM_5km
+#Km to coastline 
+#Lat
+
+#get summary of the model -> Only <10% of the variance is explained by predictors 
+sum=summary(dbRDA)
+out=capture.output(summary(dbRDA))
+saveRDS(sum,paste0(path,"dbRDA/pdbRDA_model_summary_envonly_340k.rds"))
+cat(out,file=paste0(path,"dbRDA/pdbRDA_model_summary_envonly_340k.txt"),sep="\n")
+
+#Look at model significance : the model is significant
+signif=anova(dbRDA)
+saveRDS(signif,paste0(path,"dbRDA/pdbRDA_model_significance_envonly_340k.rds"))
+write.table(data.frame(signif),paste0(path,"dbRDA/pdbRDA_anova_envonly_340k.txt"))
+
+#get model adjusted R.squared : 6.8%
+RsquareAdj(dbRDA)
+
+#Compare constrained variance to variance explained by best predictors of unconstrained principal component analysis
+dbPCA=capscale(kmer_dist~1)
+#Extract variance explained by nth PCA axis (equal to number of parameters in model)
+PCA1_8 <- scores (dbPCA, display = 'sites', choices = 1:8)
+dbRDA_PCA12 <- capscale (kmer_dist ~ PCA1_8)
+RsquareAdj(dbRDA_PCA12)$r.squared
+#The fist 7 axis explain 17% of the variance thus our variables explain 0.043/0.105 = 42% so the model is accounting for a significant part of the variation
+
+Rsquared=data.frame(Model=c("dbRDA","Unconstrained PCA"),Rsquared=c(RsquareAdj(dbRDA)$r.squared,RsquareAdj(dbRDA_PCA12)$r.squared),Rsquared.adj=c(RsquareAdj(dbRDA)$adj.r.squared,RsquareAdj(dbRDA_PCA12)$adj.r.squared))
+write.table(Rsquared,paste0(path,"dbRDA/pdbRDA_RsquaredAdj_envonly_340k.txt"),row.names=F)
+
+#Look at which dbRDA axis is significant
+sum_axis=anova(dbRDA, by="axis",  permutations =500)
+saveRDS(sum_axis,paste0(path,"dbRDA/pdbRDA_axes_significance_envonly_500k.rds"))
+#The first 3 axis are significant 
+
+#Stepwise selection of predictors 
+dbRDA.sel <- ordiR2step(capscale(kmer_dist~1,data=pred_stand), # lower model limit (simple!)
+               scope = formula(dbRDA), # upper model limit (the "full" model)
+               direction = "forward",
+               R2scope = TRUE, # can't surpass the "full" model's R2
+               pstep = 1000,
+               trace = FALSE) # change to TRUE to see the selection process!
+saveRDS(dbRDA.sel,paste0(path,"dbRDA/pdbRDA_variable_selection_envonly_500k.rds"))
+
+dbRDA.sel=readRDS(paste0(path,"dbRDA/pdbRDA_variable_selection_envonly_500k.rds"))
+
+#Final model 
+dbRDA=dbRDA = capscale(
+  kmer_dist ~ SST_AR + MMM_5km + DHW_freq_sup4_5km,
+  data = pred_stand,add=TRUE
+)
+
+summary(dbRDA)
+
+RsquareAdj(dbRDA)
+
+#Check the difference with doing a PcoA and then using rda
+pcoa <- cmdscale(kmer_dist, eig = TRUE, k = 10,add=TRUE)
+pcoa_scores <- data.frame(pcoa$points)
+
+RDA = rda(
+  pcoa_scores[,1:10] ~ SST_AR + MMM_5km + DHW_freq_sup4_5km,
+  data = pred_stand
+)
+
+RsquareAdj(RDA)
+
+#Do the variable selection for a RDA
+RDA = rda(
+  pcoa_scores[,1:10] ~ Km_to_coastline +  
+    Kd490_median + CF_median + SST_AR + MMM_5km + DHW_freq_sup4_5km + DHW_max_5km + DHW_freq_sup8+ Condition(Nreads),
+  data = pred_stand
+)
+
+RDA.sel <- ordiR2step(capscale(pcoa_scores[,1:10]~1,data=pred_stand), # lower model limit (simple!)
+               scope = formula(RDA), # upper model limit (the "full" model)
+               direction = "forward",
+               R2scope = TRUE, # can't surpass the "full" model's R2
+               pstep = 1000,
+               trace = FALSE) # change to TRUE to see the selection process!
+saveRDS(RDA.sel,paste0(path,"dbRDA/RDA_variable_selection_envonly_340k.rds"))
+
+RDA.sel
+
+
+
+write.table(data.frame(dbRDA.sel$anova),paste0(path,"dbRDA/pdbRDA_selectVariables_envonly_500k.txt"))
+```
+
+#Plot PcoA results for a different number of clusters 
+```{r}
+cluster_df=read.table(paste0(path,"Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
+
+K=10
+pcoa <- cmdscale(kmer_dist, eig = TRUE, k = K)
+pcoa_scores <- data.frame(pcoa$points)
+colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+
+pcoa_scores=pcoa_scores %>% merge(cluster_df %>% dplyr::select("wgsID_short","ITS2"),by="wgsID_short")
+
+pcoa_eigenvalues <- pcoa$eig
+expl=pcoa_eigenvalues / sum(pcoa_eigenvalues) * 100
+
+for(i in 1:(K-1)){
+  axis1=i
+  axis2=i+1
+  pco1_percent <- round(expl[axis1], 1)
+  pco2_percent <- round(expl[axis2], 1)
+  
+  Coef=3
+  text_size=30
+  
+  
+  cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+  names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+  
+  pcoa_plot12 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2"),data = pcoa_scores) +
+    # Plot site scores
+    geom_point( size = 5,alpha=0.8) +
+    # Labels and theme
+    labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) + scale_color_manual(values=cluster_colors) + labs(color="Majority ITS2")
+  
+  ggsave(pcoa_plot12 ,filename=paste0("C:/Users/Hugo/Documents/Figures/Symbionts/PcoA/All_axes/","PcoA_allclusters_sup50Mbp_colored_ITS2_",paste0("PCo",axis1),"_",paste0("PCo",axis2),".png"),width=14,height=12,dpi=500)
+  
+  
+  
+}
+
+```
+
+
+
+
+#Now that we have our set of significant environmental predictors : SST_AR, DHW_freq_sup4_5km, MMM_5Km we will test the partioning of variance across environment, geograhy and host structure
+
+#Model 1 : Env + dbMems (dbMEM1,2,3,4) + Host_structure (PC1,PC2,PC3) | (Nreads)
+#Model 2 :  Env | (Nreads + Host_structure + dbMems)
+#Model 3 : Host_structure | (Nreads +Env + dbMems)
+#Model 4 : dbMems | (Nreads +Env + Host structure)
+
+```{r}
+Model1=capscale(
+  kmer_dist ~ SST_AR + MMM_5km + DHW_freq_sup4_5km + PC1 + PC2 + PC3 + MEM1 + MEM2 + MEM3 + MEM4 + Condition(Nreads),
+  data = pred_stand
+)
+RsquareAdj(Model1)
+capture.output(summary(Model1))
+
+Model2=capscale(
+  kmer_dist ~ SST_AR + MMM_5km + DHW_freq_sup4_5km + Condition(PC1) + Condition(PC2) + Condition(PC3) + Condition(MEM1) + Condition(MEM2) + Condition(MEM3) + Condition(MEM4) + Condition(Nreads),
+  data = pred_stand
+)
+RsquareAdj(Model2)
+capture.output(summary(Model2))
+
+Model3=capscale(
+  kmer_dist ~ PC1 + PC2 + PC3 + Condition(SST_AR) + Condition(MMM_5km) + Condition(DHW_freq_sup4_5km)  + Condition(MEM1) + Condition(MEM2) + Condition(MEM3) + Condition(MEM4) + Condition(Nreads),
+  data = pred_stand
+)
+RsquareAdj(Model3)
+capture.output(summary(Model3))
+
+Model4=capscale(
+  kmer_dist ~ MEM1 + MEM2 + MEM3 + MEM4 + Condition(PC1) + Condition(PC2) + Condition(PC3) + Condition(SST_AR) + Condition(MMM_5km) + Condition(DHW_freq_sup4_5km) + Condition(Nreads),
+  data = pred_stand
+)
+RsquareAdj(Model4)
+capture.output(summary(Model4))
+
+Model5=capscale(
+  kmer_dist ~ Nreads + Condition(MEM1) + Condition(MEM2) + Condition(MEM3) + Condition(MEM4) + Condition(PC1) + Condition(PC2) + Condition(PC3) + Condition(SST_AR) + Condition(MMM_5km) + Condition(DHW_freq_sup4_5km),
+  data = pred_stand
+)
+RsquareAdj(Model5)
+capture.output(summary(Model5))
+
+
+```
+
+#Same thing but using the RDA on principal coordinates 
+```{r}
+Model1=rda(
+  pcoa_scores[,1:10] ~ SST_AR + MMM_5km + DHW_freq_sup4_5km + PC1 + PC2 + PC3 + MEM1 + MEM2 + MEM3 + MEM4 + Condition(Nreads),
+  data = pred_stand
+)
+RsquareAdj(Model1)
+capture.output(summary(Model1))
+
+Model2=rda(
+  pcoa_scores[,1:10] ~ SST_AR + MMM_5km + DHW_freq_sup4_5km + Condition(PC1) + Condition(PC2) + Condition(PC3) + Condition(MEM1) + Condition(MEM2) + Condition(MEM3) + Condition(MEM4) + Condition(Nreads),
+  data = pred_stand
+)
+RsquareAdj(Model2)
+capture.output(summary(Model2))
+
+Model3=rda(
+  pcoa_scores[,1:10] ~ PC1 + PC2 + PC3 + Condition(SST_AR) + Condition(MMM_5km) + Condition(DHW_freq_sup4_5km)  + Condition(MEM1) + Condition(MEM2) + Condition(MEM3) + Condition(MEM4) + Condition(Nreads),
+  data = pred_stand
+)
+RsquareAdj(Model3)
+capture.output(summary(Model3))
+
+Model4=rda(
+  pcoa_scores[,1:10] ~ MEM1 + MEM2 + MEM3 + MEM4 + Condition(PC1) + Condition(PC2) + Condition(PC3) + Condition(SST_AR) + Condition(MMM_5km) + Condition(DHW_freq_sup4_5km) + Condition(Nreads),
+  data = pred_stand
+)
+RsquareAdj(Model4)
+capture.output(summary(Model4))
+
+Model5=rda(
+  pcoa_scores[,1:10] ~ Nreads + Condition(MEM1) + Condition(MEM2) + Condition(MEM3) + Condition(MEM4) + Condition(PC1) + Condition(PC2) + Condition(PC3) + Condition(SST_AR) + Condition(MMM_5km) + Condition(DHW_freq_sup4_5km),
+  data = pred_stand
+)
+RsquareAdj(Model5)
+capture.output(summary(Model5))
+```
+
+
+
+
+#Make DB-RDA plot 
+```{r}
+#Scaling 1
+site_scores_scaling1 <- as.data.frame(vegan::scores(dbRDA, display = "sites", scaling = 1,choices=c(1,2,3,4,5)))
+species_scores_scaling1 <- as.data.frame(vegan::scores(dbRDA, display = "species", scaling = 1,choices=c(1,2,3,4,5)))
+env_scores_scaling1 <- as.data.frame(vegan::scores(dbRDA, display = "bp", scaling = 1,choices=c(1,2,3,4,5)))
+
+# Add labels for sites, species, and environmental variables
+site_scores_scaling1$Site <- rownames(site_scores_scaling1)
+species_scores_scaling1$Species <- rownames(species_scores_scaling1)
+env_scores_scaling1$Variable <- rownames(env_scores_scaling1)
+
+#Edit variable names 
+variable_labeller=c("PC1"="Host PC1","PC2"="Host PC2","PC3"="Host PC3","Kd490_median"="Turbidity Median","CF_median"="Cloud Fraction\nMedian","DHW_collection"="DHW\ncollection","SST_AR"="SST AR","SSTmean_change"="SST change","DHW_freq_sup4_5km"="DHW>4 Freq","DHW_max_5km"="DHW max","Km_to_coastline"="Shore\ndistance","MMM_5km"="MMM","DHW_freq_sup8"="DHW>8 Freq")
+# 
+# env_scores_scaling1$Variable=c("Host PC1","Host PC2","DHW_avg","Shore Dist","Turbidity","Cloud Frac","DHW collection","AR","SST change")
+
+#Add percentage of variation explain by each axis
+eigenvalues <- dbRDA$CCA$eig
+# Calculate the percentage of variance explained by each axis
+variance_explained <- eigenvalues / sum(eigenvalues) * 100
+
+
+pop=read.table(paste0("C:/Users/Hugo/Documents/Data/Genomics/","NJtree/aspat_clean_filtered2_Group1234_noclones.filelist.txt"),col.names=c("sample","Group"))
+pop$sample=sub(".*Aspat-","",pop$sample)
+pop$sample=sub("_.*","",pop$sample)
+pop=pop %>% rbind(data.frame(sample="OCCH-992",Group="Group1"))
+pop$wgsID_short=pop$sample
+
+
+#Add cluster information
+site_scores_scaling1=site_scores_scaling1 %>% merge(cluster_df %>% dplyr::select(wgsID_short,ITS2),by.x="Site",by.y="wgsID_short") %>% merge(pop %>% dplyr::select(wgsID_short,Group),by.x="Site",by.y="wgsID_short")
+
+#Retain only environmental variables that were found significant through forward selection
+env_scores_scaling1=env_scores_scaling1 %>% subset(Variable %in% c("MMM_5km","DHW_freq_sup4_5km","SST_AR"))
+
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+
+#Adjust size of predictor length
+dbRDA_plot=function(var,axis1,axis2,coef,v1,v2,h1,h2){
+  Coef=coef
+text_size=25
+
+dbRDA1_percent <- round(variance_explained[axis1], 1)
+dbRDA2_percent <- round(variance_explained[axis2], 1)
+
+env_scores_scaling1$CAP1scaled=Coef*env_scores_scaling1$CAP1
+env_scores_scaling1$CAP2scaled=Coef*env_scores_scaling1$CAP2
+env_scores_scaling1$CAP3scaled=Coef*env_scores_scaling1$CAP3
+
+
+#Adjust position of eigenvectors labels 
+env_scores_scaling1$vjust[env_scores_scaling1[,paste0("CAP",axis2)]>0]=v1
+env_scores_scaling1$vjust[env_scores_scaling1[,paste0("CAP",axis2)]<0]=v2
+env_scores_scaling1$hjust[env_scores_scaling1[,paste0("CAP",axis1)]>0]=h1
+env_scores_scaling1$hjust[env_scores_scaling1[,paste0("CAP",axis1)]<0]=h2
+
+if(axis1==3){
+  env_scores_scaling1$hjust[env_scores_scaling1$Variable=="SST_AR"]=0.9
+  env_scores_scaling1$vjust[env_scores_scaling1$Variable=="MMM_5km"]=1.2
+}
+
+#Change variable names 
+env_scores_scaling1$LabelledVariable <- variable_labeller[env_scores_scaling1$Variable]
+
+# Plot for Scaling 1 (Distance Scaling)
+plot_scaling1 <- ggplot() +
+  # Plot site scores
+  geom_point(data = site_scores_scaling1, aes_string(x = paste0("CAP",axis1), y = paste0("CAP",axis2),color=var,shape="Group"), size = 5,alpha=0.8)  +
+  # Plot environmental vectors
+  geom_segment(data = env_scores_scaling1, aes_string(x = 0, y = 0, xend = paste0("CAP",axis1,"scaled"), yend = paste0("CAP",axis2,"scaled")), 
+               arrow = arrow(length = unit(0.6, "cm")), color = "black", size = 1,alpha=0.8) +
+  geom_label(data = env_scores_scaling1, aes_string(x = paste0("CAP",axis1,"scaled"), y = paste0("CAP",axis2,"scaled"), label = "LabelledVariable",vjust="vjust",hjust="hjust",segment.colour=NA), 
+            color = "black",size=text_size/3) +
+  
+  # Labels and theme
+  labs(x = paste0("dbRDA",axis1," (",dbRDA1_percent,"%)"), y = paste0("dbRDA",axis2," (",dbRDA2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size-2,color="black",margin = margin(t = 0, r = 20, b = , l = 0)),legend.text = element_text(size=text_size-5,color="black"),legend.position ="bottom",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "black", size=1.5),legend.key = element_blank())
+
+return(plot_scaling1)
+  
+}
+
+#Plot all axes 1 to 5 
+dbRDA_plot_PC12=dbRDA_plot("ITS2",1,2,3,-0.2,1.2,0.4,0.3)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")+ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("Group1"="Pop1","Group2"="Pop2","Group3"="Pop3","Group4"="Pop4")))  + guides(colour = F,shape=F)
+
+dbRDA_plot_PC23=dbRDA_plot("ITS2",2,3,3,-0.2,1.2,0.5,0.5)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")  +ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("Group1"="Pop1","Group2"="Pop2","Group3"="Pop3","Group4"="Pop4"))) + guides(colour = F,shape=F)
+
+dbRDA_plot_PC34=dbRDA_plot("ITS2",3,4,2.5,-0.2,1.2,0.1,0.1)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")+ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("Group1"="Pop1","Group2"="Pop2","Group3"="Pop3","Group4"="Pop4")))  + guides(colour = F,shape=F)
+
+dummy_plot=dbRDA_plot("ITS2",2,3,4.5,-0.2,1.2,0.5,0.5)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")  +ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("Group1"="Pop1","Group2"="Pop2","Group3"="Pop3","Group4"="Pop4")))  + theme(legend.key.width =unit(3,"cm"),legend.text=element_text(size=28,color="black",margin = margin(l = -20, unit = "pt")),legend.title=element_text(size=30,color="black",margin = margin(l = 30, unit = "pt")),legend.spacing.x = unit(0, "mm")) +
+  guides(shape = guide_legend(override.aes = list(size = 15)),color = guide_legend(override.aes = list(size = 15)))
+legend <-ggpubr::get_legend(dummy_plot)
+
+
+
+map_dbRDA_combine_plot=cowplot::ggdraw() +draw_plot(full_site_map,x=0,y=0.45,width=1,height=0.55) +draw_plot(dbRDA_plot_PC12,x=0,y=0.05,width=0.33,height=0.4) +draw_plot(dbRDA_plot_PC23,x=0.33,y=0.05,width=0.33,height=0.4) +draw_plot(dbRDA_plot_PC34,x=0.66,y=0.05,width=0.33,height=0.4) + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b"),x=c(0,0),y=c(1,0.5),size=40) + draw_plot(legend,x=0,y=0,width=1,height=0.05)
+
+map_dbRDA_combine_plot_v2=cowplot::ggdraw() +draw_plot(full_site_map,x=0.02,y=0.45,width=1,height=0.55) +draw_plot(dbRDA_plot_PC12,x=0.02,y=0.05,width=0.46,height=0.4) +draw_plot(dbRDA_plot_PC23,x=0.51,y=0.05,width=0.46,height=0.4) + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b"),x=c(0,0),y=c(1,0.5),size=40) + draw_plot(legend,x=0,y=0,width=1,height=0.05)
+ggsave(map_dbRDA_combine_plot_v2 ,filename=paste0("C:/Users/Hugo/Documents/Figures/Genomics/Manuscripts_figures/","Figure_4.png"),width=22,height=20,dpi=300)
+
+ggsave(map_dbRDA_combine_plot_v2 ,filename=paste0("C:/Users/Hugo/Documents/Figures/Genomics/Manuscripts_figures/","Figure_4.png"),width=30,height=20,dpi=300)
+
+ggsave(dbRDA_plot_PC12,filename=paste0("C:/Users/Hugo/Documents/Figures/Symbionts/dbRDA/","dbRDA12_final.png"),width=12,height=10,dpi=500)
+
+ggsave(dbRDA_plot_PC23,filename=paste0("C:/Users/Hugo/Documents/Figures/Symbionts/dbRDA/","dbRDA23_final.png"),width=12,height=10,dpi=500)
+
+
+```
+
+
+###1. Perform db-RDA on host population structure
+
+
+#Load the data 
+```{r}
+path="C:/Users/Hugo/Documents/Data/Genomics/dbRDA/"
+path_save="C:/Users/Hugo/Documents/Figures/Genomics/dbRDA/"
+
+
+#Environmental variables
+env=read.csv("C:/Users/Hugo/Documents/Data/Env_data_all/all_env_metrics_aspat_sites.csv")
+
+#Host principal components
+host_pc=read.table("C:/Users/Hugo/Documents/Data/Genomics/Popgen_outputs/Host_PCs_aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2.txt",header=T)
+rownames(host_pc)=host_pc$wgsID_short
+host_pc=host_pc[,paste0("PC",as.character(seq(1,10)))]
+
+#Other metadata (reef level and colony level)
+meta_colony=read.table("C:/Users/Hugo/Documents/Data/Colony_metadata_Aspat_GBR_NC.txt",header=T,sep="\t")
+meta_site=openxlsx::read.xlsx("C:/Users/Hugo/Documents/Data/Summary_PhD_sites.xlsx",sheet = "Sheet 1")
+```
+
+#Compute dbMem eigenvectors for the subset of colonies used in the analysis
+#Following the method of Borcard & Legendre (2002, 2004)
+```{r}
+rownames(meta_colony)=meta_colony$wgsID_short
+coord=meta_colony[rownames(host_pc),c("wgsID_short","Lon","Lat")]
+coord$Lon=as.numeric(coord$Lon)
+coord$Lat=as.numeric(coord$Lat)
+
+#Discard individuals that have missing Lon Lat (1 colony)
+coord=coord %>% subset(!is.na(Lon) & !is.na(Lat))
+
+#At NC and CB sites colonies spatial coordinates were not collected and only the sites coordinates were used
+#As this will create an issue in the dbMem computation, we will jitter points around the site mean (by a distance of maximum 300m which si the size of sites that were explored)
+distance_limit=300
+jittered_coord=coord
+for(i in 1:nrow(coord)){
+  if(coord$wgsID_short[i] %in% meta_colony$wgsID_short[meta_colony$Country=="New_Caledonia"]){
+    lat_mean <- coord[i, "Lat"]
+    lon_mean <- coord[i, "Lon"]
+    
+    #Random distance and angle in radians
+    distance <- runif(1, min = 0, max = distance_limit)
+    angle <- runif(1, min = 0, max = 2 * pi)
+    
+    # Jittered coordinates (Lat, Lon) using polar coordinates (distance and angle)
+    lat_jitter <- lat_mean + (distance / 111320) * cos(angle) # Approximate conversion to degrees
+    lon_jitter <- lon_mean + (distance / (111320 * cos(lat_mean * pi / 180))) * sin(angle) # Adjusted for latitude
+    
+    jittered_coord[i, "Lat"] <- lat_jitter
+    jittered_coord[i, "Lon"] <- lon_jitter
+    
+  }
+}
+
+#Save jittered coordinates
+write.table(jittered_coord,paste0(path,"Jiitered_coordinates_host_subset.txt"),row.names=F)
+
+#Compute spatial distance using haversine distance (more accurate than euclidean distance for spatial coordinates)
+n <- nrow(jittered_coord)
+hav_matrix <- matrix(0, nrow = n, ncol = n)
+rownames(hav_matrix) <- rownames(jittered_coord)
+colnames(hav_matrix) <- rownames(jittered_coord)
+
+# Fill the matrix with Haversine distances
+for(i in 1:n){
+  for(j in 1:n){
+    if(i != j){
+      d <- distHaversine(jittered_coord[i, c("Lon", "Lat")], jittered_coord[j, c("Lon", "Lat")])
+      hav_matrix[i, j] <- d / 1000  # convert meters to kilometers
+    }
+  }
+}
+
+# Convert to distance matrix object
+hav_dist <- as.dist(hav_matrix)
+
+#Save distance object 
+saveRDS(hav_dist,paste0(path,"Haversine_distance_matrix_host_subset.rds"))
+
+#Run dbmem
+dbmem_vars <- adespatial::dbmem(hav_dist)
+dbmem_vars$wgsID_short=rownames(dbmem_vars)
+
+#Save dbMems values ( 4 eigenvectors are found)
+saveRDS(dbmem_vars,paste0(path,"dbMems_host_subset.rds"))
+
+dbmem_vars=readRDS(paste0(path,"dbMems_host_subset.rds"))
+
+# Eigenvalues
+eigenvalues <- attributes(dbmem_vars)$values
+
+# Proportion of variance explained
+var_explained <- eigenvalues / sum(eigenvalues)
+
+# Cumulative variance explained
+cumulative_var_explained <- cumsum(var_explained)
+
+plot(seq(1,10),cumulative_var_explained)
+
+# Print eigenvalues and cumulative variance explained
+print(data.frame(eigenvalues, var_explained, cumulative_var_explained))
+
+#4 dbMems eigenvectors explain 90% of the variance 
+```
+
+#create a predictor table with all predictor variables in the same order as in the response matrix 
+```{r}
+pred=meta_colony %>% dplyr::select(wgsID_short,locationID) %>% merge(env,by.x="locationID",by.y="Site.name")
+pred=pred %>% merge(meta_site %>% dplyr::select(Site.name,Km_to_coastline),by.x="locationID",by.y="Site.name")
+pred$Km_to_coastline=as.numeric(pred$Km_to_coastline)
+pred=pred %>% merge(dbmem_vars,by="wgsID_short")
+
+#Make sure only individuals in the response matrix are kept
+host_pc=host_pc[rownames(host_pc) %in% pred$wgsID_short,]
+
+rownames(pred)=pred$wgsID_short
+pred=pred[rownames(host_pc),]
+
+#Standardize predictors 
+pred_stand=decostand(pred %>% dplyr::select(-c(wgsID_short,locationID,Country)),method="standardize")
+
+#Write table of standardized predictors
+write.table(pred_stand,paste0(path,"Standardized_predictors_host_subset.rds"),row.names=F)
+```
+
+#Plot correlation between environmental predictors 
+```{r}
+# #Plot correlation between environmental predictors 
+# pred_stand_sub=pred_stand[,c("Km_to_coastline","Lat","DHW_avg_5km","Kd490_median","CF_median","DHW_collection","SST_AR","SSTmean_change","Chla_median","MMM_5km","DHW_freq_sup4_5km","DHW_max_5km","TSA_DHW_mean_5km","SST_average")]
+# cor=cor(pred_stand_sub,method="pearson")
+# 
+# library(corrplot)
+# png(height=465, width=465, file=paste0(figpath,"Env/Env_predictors_pearson_correlation.png"),res=300,units='mm')
+# corrplot::corrplot(cor, order = 'hclust', addrect = 6,col = COL2('RdYlBu', 10),cl.pos = 'b',tl.cex=2,cl.cex = 2,tl.col='black')
+# dev.off()
+
+```
+
+
+
+#Perform partial db-RDA, to separate the effect of environmental variables, geography and host population structure, several dbRDA are built
+#First we build a model using only environmental variables and we perform forward selection to retain only significant predictors 
+
+#Model 1 : Env + dbMems + Host_structure (PC1,PC2,PC3) | (Nreads)
+#Model 2 :  Env | (Nreads + Host_structure + dbMems)
+#Model 3 : Host_structure | (Nreads +Env + dbMems)
+#Model 4 : dbMems | (Nreads +Env + Host structure)
+
+```{r}
+#Alternative version to perform partial dbRDA conditioned by Nreads
+dbRDA = rda(
+  host_pc ~ Km_to_coastline +  DHW_avg_5km +
+    Kd490_median + CF_median + SST_AR + SSTmean_change +
+    Chla_median + MMM_5km + DHW_freq_sup4_5km + DHW_max_5km +
+    TSA_DHW_mean_5km + DHW_freq_sup8 ,
+  data = pred_stand
+)
+
+#Look at variant inflation factor and drop variables progressively, starting with the one with the highest VIF until all are below 5
+vif.cca(dbRDA)
+
+#Variables sucessively removed
+#TSA_DHW_mean_5km
+#DHW_avg_5km
+#SST average
+#Chla median
+#SSTmean_change
+#Km to coastline 
+#Lat
+
+
+dbRDA = rda(
+  host_pc ~ Km_to_coastline  +
+    Kd490_median + CF_median + SST_AR  + MMM_5km + DHW_freq_sup4_5km + DHW_max_5km +
+     DHW_freq_sup8 ,
+  data = pred_stand
+)
+
+#Look at variant inflation factor and drop variables progressively, starting with the one with the highest VIF until all are below 10
+vif.cca(dbRDA)
+
+
+RDA = rda(
+  host_pc ~ Km_to_coastline  +
+    Kd490_median + CF_median + SST_AR  + MMM_5km + DHW_freq_sup4_5km + DHW_max_5km +
+     DHW_freq_sup8 ,
+  data = pred_stand
+)
+
+vif.cca(RDA)
+
+RsquareAdj(dbRDA)
+RsquareAdj(RDA)
+
+#get summary of the model -> Only <10% of the variance is explained by predictors 
+sum=summary(dbRDA)
+out=capture.output(summary(dbRDA))
+saveRDS(sum,paste0(path,"dbRDA_model_summary_envonly.rds"))
+cat(out,file=paste0(path,"dbRDA_model_summary_envonly.txt"),sep="\n")
+
+#Look at model significance : the model is significant
+signif=anova(dbRDA)
+saveRDS(signif,paste0(path,"dbRDA_model_significance_envonly.rds"))
+write.table(data.frame(signif),paste0(path,"dbRDA_anova_envonly.txt"))
+
+#get model adjusted R.squared : 6.8%
+RsquareAdj(dbRDA)
+
+#Compare constrained variance to variance explained by best predictors of unconstrained principal component analysis
+dbPCA=capscale(host_pc~1)
+#Extract variance explained by nth PCA axis (equal to number of parameters in model)
+PCA1_8 <- scores (dbPCA, display = 'sites', choices = 1:8)
+dbRDA_PCA12 <- capscale (host_pc ~ PCA1_8)
+RsquareAdj(dbRDA_PCA12)$r.squared
+#The fist 7 axis explain 17% of the variance thus our variables explain 0.043/0.105 = 42% so the model is accounting for a significant part of the variation
+
+Rsquared=data.frame(Model=c("dbRDA","Unconstrained PCA"),Rsquared=c(RsquareAdj(dbRDA)$r.squared,RsquareAdj(dbRDA_PCA12)$r.squared),Rsquared.adj=c(RsquareAdj(dbRDA)$adj.r.squared,RsquareAdj(dbRDA_PCA12)$adj.r.squared))
+write.table(Rsquared,paste0(path,"dbRDA_RsquaredAdj_envonly.txt"),row.names=F)
+
+#Look at which dbRDA axis is significant
+sum_axis=anova(dbRDA, by="axis",  permutations =500)
+saveRDS(sum_axis,paste0(path,"dbRDA_axes_significance_envonly.rds"))
+#The first 3 axis are significant 
+
+#Stepwise selection of predictors 
+dbRDA.sel <- ordiR2step(capscale(host_pc~1,data=pred_stand), # lower model limit (simple!)
+               scope = formula(dbRDA), # upper model limit (the "full" model)
+               direction = "forward",
+               R2scope = TRUE, # can't surpass the "full" model's R2
+               pstep = 1000,
+               trace = FALSE) # change to TRUE to see the selection process!
+saveRDS(dbRDA.sel,paste0(path,"dbRDA_variable_selection_envonly.rds"))
+
+dbRDA.sel=readRDS(paste0(path,"dbRDA_variable_selection_envonly_500k.rds"))
+
+write.table(data.frame(dbRDA.sel$anova),paste0(path,"dbRDA_selectVariables_envonly.txt"),quote=F)
+
+#Final model = previous model 
+RDA=rda(
+  host_pc ~ SST_AR + MMM_5km + DHW_freq_sup4_5km + Depth_corrected ,
+  data = pred_stand
+)
+
+
+RsquareAdj(RDA)
+
+
+```
+
+#Now that we have our set of significant environmental predictors : SST_AR, DHW_freq_sup4_5km, MMM_5Km we will test the partioning of variance across environment and geography
+
+#Model 1 : Env + dbMems (dbMEM1,2,3,4) 
+#Model 2 :  Env | ( dbMems)
+#Model 3 : dbMems | Env
+
+```{r}
+Model1=capscale(
+  host_pc ~ Km_to_coastline  +
+    Kd490_median + CF_median + SST_AR  + MMM_5km + DHW_freq_sup4_5km + DHW_max_5km +
+     DHW_freq_sup8 + MEM1 + MEM2 + MEM3 + MEM4,
+  data = pred_stand
+)
+RsquareAdj(Model1)
+capture.output(summary(Model1))
+
+Model2=capscale(
+  host_pc ~ Km_to_coastline  +
+    Kd490_median + CF_median + SST_AR  + MMM_5km + DHW_freq_sup4_5km + DHW_max_5km +
+     DHW_freq_sup8 + Condition(MEM1) + Condition(MEM2) + Condition(MEM3) + Condition(MEM4),
+  data = pred_stand
+)
+RsquareAdj(Model2)
+capture.output(summary(Model2))
+anova(Model2)
+
+Model3=capscale(
+  host_pc ~ MEM1 + MEM2 + MEM3 + MEM4 + Condition(Km_to_coastline)  +
+    Condition(Kd490_median) + Condition(CF_median) + Condition(SST_AR)  + Condition(MMM_5km) + Condition(DHW_freq_sup4_5km) + Condition(DHW_max_5km) +
+     Condition(DHW_freq_sup8),
+  data = pred_stand
+)
+RsquareAdj(Model3)
+capture.output(summary(Model3))
+```

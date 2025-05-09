@@ -57,16 +57,15 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
+########################################################## DUPLICATES MARIKING ###################################################################
+#This scripts serves to mark and delete PCR and optical duplicates using picard version 2.27.5 
 
-#5. Mark and delete PCR duplicates using picard version 2.27.5 
-
-#Recommanded to generate before after quality plot to check base recalibration 
 cd /nvme/disk0/lecellier_data/WGS_NC_data/
 mkdir /nvme/disk0/lecellier_data/WGS_NC_data/BAM_statistics/
 
 #GBR
-#INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
-#OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/BAM_statistics/"
+INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
+OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/BAM_statistics/"
 
 #NC
 INDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Aligned_files/"
@@ -89,7 +88,7 @@ then
   start=`date +%s`
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} : start processing
   
-  #5.1 Add read group information
+  #1. Add read group information
   if echo ${BASE} | grep -q 'RRAP'; then
   #GBR
   #Get file info from other repertory
@@ -118,7 +117,7 @@ then
   #RGPU : flowcell, lane, sample barcode 
   #RGSM : sample name (=RGID in this case)
   
-  #5.2 Mark and remove duplicate
+  #2. Mark and remove duplicate
   /home/hdenis/Programs/gatk-4.5.0.0/gatk MarkDuplicates INPUT="${INDIR}${BASE}_UNDEDUP_RG.bam" OUTPUT="${INDIR}${BASE}_MARKED_DUP.bam" METRICS_FILE="${OUTDIR}${BASE}_marked_dup_metrics.txt" REMOVE_DUPLICATES=true TMP_DIR="${INDIR}" VALIDATION_STRINGENCY=LENIENT
   
   end=`date +%s`
@@ -132,30 +131,3 @@ else
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} already processed
 
 fi
-
-
-#Trash 
-##Remove UNDEDUP files that have been processed
-#INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
-#
-##List files that have been aligned and indexed with bwa mem / samtools 
-#MARKED_FILES=($INDIR*_MARKED_DUP.bam)
-#for FILE in ${MARKED_FILES[@]}; do
-#  BASE=$(basename $FILE)
-#  BASE=${BASE%%_M*}
-#  rm "${INDIR}${BASE}_UNDEDUP.bam"
-#done
-
-
-##Create file IDs
-#>/nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/aln_ids.txt
-#for FILE in ${FILES[@]}; do
-#	BASE=$(basename $FILE)
-#	BASE=${BASE%%_U*} 
-#	echo ${BASE} >> /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/aln_ids.txt
-#done 
-
-#######################################################################################
-
-#View read group 
-#samtools view -H "${INDIR}${BASE}_UNDEDUP.bam" | grep '^@RG

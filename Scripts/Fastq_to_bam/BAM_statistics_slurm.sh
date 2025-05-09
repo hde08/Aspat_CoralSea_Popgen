@@ -57,15 +57,17 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-#7. Generate BAM file statistics using samtools version 1.10 
-
-cd /nvme/disk0/lecellier_data/WGS_NC_data/
+########################################################## BAM STATISTICS ###################################################################
+#This scripts serves to generate BAM file statistics using samtools version 1.10 
+ 
 
 #GBR
-#INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
-#OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/BAM_statistics/"
+cd /nvme/disk0/lecellier_data/WGS_GBR_data/
+INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
+OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/BAM_statistics/"
 
 #NC
+cd /nvme/disk0/lecellier_data/WGS_NC_data/
 INDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Aligned_files/"
 OUTDIR="/nvme/disk0/lecellier_data/WGS_NC_data/BAM_statistics/"
 
@@ -83,9 +85,9 @@ then
   start=`date +%s`
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} : start processing
   
-    #7.1 Generate index bai and statistics from BAM aligned reads 
+    #1. Generate index bai and statistics from BAM aligned reads 
     samtools index -@ 2 "${INDIR}${BASE}_MARKED_DUP.bam"
-    #7.2 Output statistics 
+    #2. Output statistics 
     samtools idxstats --threads 2 "${INDIR}${BASE}_MARKED_DUP.bam" > "${OUTDIR}${BASE}-index_stats.txt"
     #Columns in output file are : reference sequence name, sequence lenght, mapped reads segment, unmapped reads segment 
     samtools coverage "${INDIR}${BASE}_MARKED_DUP.bam" > "${OUTDIR}${BASE}-coverage.txt"
@@ -99,23 +101,3 @@ else
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} already processed
 
 fi
-
-
-#Count uniquely mapped reads to A.millepora chr 
-#UNIQ_DIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Uniquely_mapped_reads_files/"
-#
-#FILES=($INDIR*Amillepora_MARKED_DUP.bam)
-#FILES=("${FILES[@]:13:40}")
-#
-#start=`date +%s`
-#for FILE in "${FILES[@]}"; do
-#    BASE=$(basename $FILE)
-#    BASE=${BASE%%_M*} 
-#    #7.1 Generate uniquely mapped reads file 
-#    samtools view -F 2048 -b "${INDIR}${BASE}_MARKED_DUP.bam" --threads 20 > "${UNIQ_DIR}${BASE}.uniquemapped.bam"
-#    #samtools view -b -e '!([XA] | [SA])' --threads 20 "${INDIR}${BASE}_MARKED_DUP.bam" > "${UNIQ_DIR}${BASE}.uniquemapped.bam"
-#    #7.2 Output statistics  
-#    samtools coverage "${UNIQ_DIR}${BASE}.uniquemapped.bam" > "${UNIQ_DIR}${BASE}-coverage.txt"
-#done
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.

@@ -57,7 +57,10 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-#### 2. Quality trimming and adapter removal using Trimmomatic v0.39
+########################################################## READS TRIMMING ###################################################################
+#This scripts serves to remove adapters and trim low quality bases from raw reads 
+
+####1. Quality trimming and adapter removal using Trimmomatic v0.39
 #mkdir /data1/WGS_Aspat_GBR/Trimmed_files
 mkdir /nvme/disk0/lecellier_data/WGS_NC_data/Postqfilt_quality_check/
 mkdir /nvme/disk0/lecellier_data/WGS_NC_data/Trimmed_files/
@@ -74,73 +77,51 @@ FILENAME=${FILES[$((${SLURM_ARRAY_TASK_ID}-1))]}
 BASE=$(basename $FILENAME)
 BASE=${BASE%%_*}
 
-#If statement to avoid reprocessing file
-#if [ ! -s "${OUTDIR}{BASE}_R1_paired.fastq.gz" ] 
-#then
-#  
-#  start=`date +%s`
-#  echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} : start trimming 
-#  
-#  ##Run Trimmomatic 
-#  ##Trim log removed as it takes too much storage can be added with -trimlog "${OUTDIR}{}_trim.log"
-#  start=`date +%s`
-#  java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}${BASE}_sum.txt" "${INDIR}${BASE}_1.fastq.gz" "${INDIR}${BASE}_2.fastq.gz" "${OUTDIR}${BASE}_R1_paired.fastq.gz" "${OUTDIR}${BASE}_R1_unpaired.fastq.gz" "${OUTDIR}${BASE}_R2_paired.fastq.gz" "${OUTDIR}${BASE}_R2_unpaired.fastq.gz" ILLUMINACLIP:/nvme/disk0/lecellier_data/WGS_NC_data/Illumina_adapters_Iva_version.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50
-##  end=`date +%s`
-##  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-#  
-#  ##Run fastq on trimmed files 
-#  fastqc --noextract --outdir "Postqfilt_quality_check/" "${OUTDIR}${BASE}_R1_paired.fastq.gz" --threads 1
-#  fastqc --noextract --outdir "Postqfilt_quality_check/" "${OUTDIR}${BASE}_R2_paired.fastq.gz" --threads 1
-#  
-#else
-#
-#  echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} already processed
-#
-#fi
+#Trimming parameters
+#Keep bases with phred-score quality > 20 in sliding window of 4 bp (average)
+#Keep reads with a minimum length of 50bp after trimming
+#Remove leading and trailing low quality bases (3)
+#Remove adapters using the illuminaclip option in 'palindrome mode'
 
-## Keep bases with phred-score quality > 20 in sliding window of 4 bp (average)
-## Remove adapter sequences in user specified file
-## Remove reads with length < 50bp following trimming'''
-#
-### Identify empty files after trimmomatic and delete them to avoid crashing multiqc
-#Store their ID in a file to record files that have been eliminated
-#TRIMMED_FILES=(/nvme/disk0/lecellier_data/WGS_NC_data/Trimmed_files/*_paired*.gz)
-#for FILE in ${TRIMMED_FILES[@]}; do
-#    NREADS=$(awk '{s++}END{print s/4}' $FILE)
-#    if [ "$NREADS" = 0 ]; then
-#        echo $(basename ${FILE}) >> /nvme/disk0/lecellier_data/WGS_NC_data/Trimmed_files/Trimming_empty_ids.txt
-#        #rm $FILE
-#    fi   
-#done
-#
-##### 3. Run multiqc on all samples  
+#If statement to avoid reprocessing file
+if [ ! -s "${OUTDIR}{BASE}_R1_paired.fastq.gz" ] 
+then
+  
+  start=`date +%s`
+  echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} : start trimming 
+  
+  #Run Trimmomatic 
+  #Trim log removed as it takes too much storage can be added with -trimlog "${OUTDIR}{}_trim.log"
+  start=`date +%s`
+  java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}${BASE}_sum.txt" "${INDIR}${BASE}_1.fastq.gz" "${INDIR}${BASE}_2.fastq.gz" "${OUTDIR}${BASE}_R1_paired.fastq.gz" "${OUTDIR}${BASE}_R1_unpaired.fastq.gz" "${OUTDIR}${BASE}_R2_paired.fastq.gz" "${OUTDIR}${BASE}_R2_unpaired.fastq.gz" ILLUMINACLIP:/nvme/disk0/lecellier_data/WGS_NC_data/Illumina_adapters_Iva_version.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50
+  end=`date +%s`
+  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
+  
+  #Run fastq on trimmed files to confirm adapters have been removed
+  fastqc --noextract --outdir "Postqfilt_quality_check/" "${OUTDIR}${BASE}_R1_paired.fastq.gz" --threads 1
+  fastqc --noextract --outdir "Postqfilt_quality_check/" "${OUTDIR}${BASE}_R2_paired.fastq.gz" --threads 1
+  
+else
+
+  echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} already processed
+
+fi
+
+
+#2. Identify empty files after trimmomatic and delete them to avoid crashing multiqc
+Store their ID in a file to record files that have been eliminated
+TRIMMED_FILES=(/nvme/disk0/lecellier_data/WGS_NC_data/Trimmed_files/*_paired*.gz)
+for FILE in ${TRIMMED_FILES[@]}; do
+    NREADS=$(awk '{s++}END{print s/4}' $FILE)
+    if [ "$NREADS" = 0 ]; then
+        echo $(basename ${FILE}) >> /nvme/disk0/lecellier_data/WGS_NC_data/Trimmed_files/Trimming_empty_ids.txt
+        #rm $FILE
+    fi   
+done
+
+#3. Run multiqc on all samples  
 multiqc "/nvme/disk0/lecellier_data/WGS_NC_data/Postqfilt_quality_check/" -o "/nvme/disk0/lecellier_data/WGS_NC_data/Postqfilt_quality_check/" -f -d
 #''' Warning : multiqc will crash if some fastqc reports are empty (0 sequences)'''
-
-
-
-
-#Old script version to run trimmomatic 
-
-##Test scripts on a subset of 10 files 
-##FILES=("${FILES[@]:160:20}")
-#
-##Save file IDs in file 
-#>/nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/ids.txt
-#for FILE in ${FILES[@]}; do
-#	BASE=$(basename $FILE)
-#	BASE=${BASE%%_1*} 
-#	echo ${BASE} >> /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/ids.txt
-#done 
-#
-#
-##Run Trimmomatic in parallel mode : assign each file to 1 CPU -> seems to work better than providing files one by one with -threads N argument
-##Trim log removed as it takes too much storage -trimlog "${OUTDIR}{}_trim.log"
-#start=`date +%s`
-#cat /nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/ids.txt | parallel --jobs $NPROCS "java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}{}_sum.txt" "${INDIR}{}_1.fq.gz" "${INDIR}{}_2.fq.gz" "${OUTDIR}{}_R1_paired.fastq.gz" "${OUTDIR}{}_R1_unpaired.fastq.gz" "${OUTDIR}{}_R2_paired.fastq.gz" "${OUTDIR}{}_R2_unpaired.fastq.gz" ILLUMINACLIP:/nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/Illumina_adapters_Iva_version.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50"
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-
 
 
 

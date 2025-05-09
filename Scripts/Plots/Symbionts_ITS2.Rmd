@@ -1,0 +1,881 @@
+---
+title: "Symbionts_ITS2"
+author: "Hugo DENIS"
+date: "2025-01-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Script to compare ITS2 sequences recovered from hologenome data using graftM to conventional ITS2 amplicon sequencing data
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(Biostrings)
+library(aplot)
+library(ggtree)
+library(cowplot)
+library(RColorBrewer)
+libarry(phangorn)
+```
+
+#Load the data 
+```{r}
+path="C:/Users/Hugo/Documents/Data/symbionts/"
+figpath="C:/Users/Hugo/Documents/Figures/Symbionts/"
+
+#Colony and sites metadata
+meta_colony=read.table("C:/Users/Hugo/Documents/Data/Colony_metadata_Aspat_GBR_NC.txt",header=T,sep="\t")
+meta_site=openxlsx::read.xlsx("C:/Users/Hugo/Documents/Data/Summary_PhD_sites.xlsx",sheet = "Sheet 1")
+
+#Load psbA ncr data 
+psbAncr_consensus_uniqmap=read.table(paste0(path,"Summary_mapping_Cladocopium_psbA_100-90_allref_aspat_clean_uniqmap.tab"),header=T)
+
+#Load ITS2 graftM data 
+graftM_its2=read.table(paste0(path,"ITS2_abundance_aspat_clean.txt"),header=T)
+
+symportal_its2=read.table(paste0(path,"Symportal_results_coral_ITS2/post_med_seqs/547_20250122T095002_DBV_20250123T014557.seqs.relative.abund_and_meta.txt"),header=T,check.names=F,sep="\t")
+symportal_its2$eventID=sub("_.*","",symportal_its2$sample_name)
+symportal_its2$eventID=sub("RRAP-","Aspat_",symportal_its2$eventID)
+symportal_its2=symportal_its2[1:72,]
+symportal_its2=symportal_its2  %>% merge(meta_colony %>% dplyr::select(wgsID_short,eventID,locationID),by="eventID",all.y=F) %>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster,Km_to_coastline),by.x="locationID",by.y="Site.name") %>% distinct(wgsID_short,.keep_all = T)
+
+#1. Version where the figure has the dominant ITS2 
+symportal_profiles=read.table(paste0(path,"Symportal_results_coral_ITS2/its2_type_profiles/547_20250122T095002_DBV_20250123T014557.profiles.relative.abund_and_meta.txt"),header=T,check.names=F,sep="\t",skip=2)
+symportal_profiles=symportal_profiles[-c(1,2,3,4),-c(1)]
+colnames(symportal_profiles)[1]="sample_name"
+symportal_profiles$eventID=sub("_.*","",symportal_profiles$sample_name)
+symportal_profiles$eventID=sub("RRAP-","Aspat_",symportal_profiles$eventID)
+symportal_profiles=symportal_profiles  %>% merge(meta_colony %>% dplyr::select(wgsID_short,eventID,locationID),by="eventID",all.y=F) %>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster,Km_to_coastline),by.x="locationID",by.y="Site.name") %>% distinct(wgsID_short,.keep_all = T)
+
+symportal_profiles=symportal_profiles %>%
+  mutate(across(C3k:C3bo.2, ~ ifelse(. != 0, 1, 0))) %>% gather(C3k:C3bo.2,key="ITS2",value="Abund") %>% mutate(ITS2=sub("\\..*","",ITS2))
+
+name="Majority ITS2"
+profile_colors=c("#6E3610","#D38B46","#A0612B","#4EC49B","#00724E")
+names(profile_colors)=c("C3k","C3bo","C3bo/C3k","C50b","C50c")
+
+#2. Version were we show the full profile name 
+# symportal_profiles=read.table(paste0(path,"Symportal_results_coral_ITS2/its2_type_profiles/547_20250122T095002_DBV_20250123T014557.profiles.relative.abund_and_meta.txt"),header=T,check.names=F,sep="\t",skip=6)
+# symportal_profiles=symportal_profiles[,-c(1)]
+# colnames(symportal_profiles)[1]="sample_name"
+# symportal_profiles$eventID=sub("_.*","",symportal_profiles$sample_name)
+# symportal_profiles$eventID=sub("RRAP-","Aspat_",symportal_profiles$eventID)
+# symportal_profiles=symportal_profiles  %>% merge(meta_colony %>% dplyr::select(wgsID_short,eventID,locationID),by="eventID",all.y=F) %>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster,Km_to_coastline),by.x="locationID",by.y="Site.name") %>% distinct(wgsID_short,.keep_all = T)
+# 
+# symportal_profiles=symportal_profiles %>%
+#   mutate(across(`C3k-C50a-C3-C3cz-C3ba-C50q-C50f`:`C3k/C3bo-C50a-C3`, ~ ifelse(. != 0, 1, 0))) %>% gather(`C3k-C50a-C3-C3cz-C3ba-C50q-C50f`:`C3k/C3bo-C50a-C3`,key="ITS2",value="Abund") %>% mutate(ITS2=sub("\\..*","",ITS2))
+# 
+# name="ITS2 Profile"
+```
+
+
+
+#Symportal ITS2 plot 
+```{r}
+#Select top 20 variants for plotting purposes, group everyting under the same name
+variant_abund_top20=symportal_its2 %>% gather(A3:`21594_C`,key="ITS2",value="Rel_abund") %>% group_by(ITS2) %>% dplyr::summarise(Abund=sum(Rel_abund)) %>% arrange(desc(Abund)) %>% slice_head(n=20)
+
+DIV_colors=c("#A9E4EF",colorRampPalette(c("#FFD700", "#CC791E", "#8B4513"))(11),colorRampPalette(c("#66C2A5", "#009E73", "#00441B"))(8),"grey")
+names(DIV_colors)=sort(c(variant_abund_top20$ITS2, "Other"))
+
+
+top5=variant_abund_top20[1:5,]
+
+bold_vector=names(DIV_colors)
+for(i in 1:length(bold_vector)){ 
+    bold_vector[i]<-if_else(bold_vector[i]  %in% top5$ITS2,paste('**',bold_vector[i] ,'**',sep=''),bold_vector[i]) 
+}  
+
+symportal_plot=symportal_its2 %>% gather(A3:`21594_C`,key="ITS2",value="Rel_abund") %>% mutate(ITS2=if_else(ITS2 %in% variant_abund_top20$ITS2,ITS2,"Other")) %>% ggplot( aes(x=wgsID_short, Rel_abund)) + geom_col(aes(fill=ITS2),width=0.8)+ theme_tree2() + theme(legend.position='left',axis.text.x=element_blank(),legend.text =ggtext::element_markdown(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=10,r=10),legend.margin = margin(t=10,b=10,l=0,r=0),strip.text = element_text(size=20))+ labs(fill="Symportal\nITS2 variant") + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1))+ facet_grid(~Genomic.Cluster,scales="free_x", space = "free_x",labeller=as_labeller(c("CB"="CB","GBR_Central_North"="GBR C/N","GBR_South"="S","NC"="NC"))) + scale_fill_manual(values=DIV_colors,labels=bold_vector)
+```
+
+#Symportal profile plot 
+```{r}
+symportal_profile_plot=symportal_profiles %>% ggplot( aes(x=wgsID_short, Abund)) + geom_col(aes(fill=ITS2),width=0.8)+ theme_tree2() + theme(legend.position='left',axis.text.x=element_blank(),legend.text =ggtext::element_markdown(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=10,r=10),legend.margin = margin(t=10,b=10,l=0,r=0),strip.text = element_text(size=20))+ labs(fill=name) + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1))+ facet_grid(~Genomic.Cluster,scales="free_x", space = "free_x",labeller=as_labeller(c("CB"="CB","GBR_Central_North"="GBR C/N","GBR_South"="S","NC"="NC"))) + scale_fill_manual(values=profile_colors)
+```
+
+
+#GraftM ITS2 plot 
+```{r}
+low_abund_ITS2=names(graftM_its2[2:22])[colSums(graftM_its2[,2:22])<5]
+graftM_its2=graftM_its2 %>% dplyr::select(-low_abund_ITS2)
+
+#Convert to wide format the abundance tables 
+graftM_its2=graftM_its2 %>% mutate(Total_reads=rowSums(across(where(is.numeric)))) %>% subset(Total_reads>0)
+graftM_its2[,2:9]=graftM_its2[,2:9]/graftM_its2$Total_reads
+graftM_its2 =graftM_its2 %>% tidyr::gather(C1:Cladocopium_sp,key="ITS2",value="Rel_abund")
+
+graftM_its2=graftM_its2%>% merge(meta_colony %>% dplyr::select(wgsID_short,locationID),by="wgsID_short",all.y=F) %>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster,Km_to_coastline),by.x="locationID",by.y="Site.name",all.y=F)
+
+
+full_wgsID_list <- unique(symportal_its2$wgsID_short)
+graftM_its2 <- graftM_its2 %>%
+  filter(wgsID_short %in% full_wgsID_list) %>% merge(symportal_its2 %>% dplyr::select(wgsID_short,Genomic.Cluster),all.y=T) %>% mutate(Rel_abund=if_else(is.na(Rel_abund),0,Rel_abund))
+
+#Top 3 ITS2 sequences across the whole dataset
+top3=graftM_its2 %>% group_by(ITS2) %>% dplyr::summarise(A=sum(Rel_abund)) %>% arrange(desc(A)) %>% slice_head(n=3)
+
+
+ITS2_colors<-c("grey","#A9E4EF","#CC79A7","#62BAAC","#4B8077","#CC791E","#009E73","#E2655C")
+names(ITS2_colors)<-sort(unique(graftM_its2$ITS2))
+
+bold_vector=names(ITS2_colors)
+for(i in 1:length(bold_vector)){ 
+    bold_vector[i]<-if_else(bold_vector[i]  %in% top3$ITS2,paste('**',bold_vector[i] ,'**',sep=''),bold_vector[i]) 
+}  
+
+#Put genra names in italics 
+bold_vector[bold_vector=="**Cladocopium_sp**"]="***Cladocopium sp.***"
+
+ITS2_barplot <- graftM_its2 %>% ggplot( aes(x=wgsID_short, Rel_abund)) + geom_col(aes(fill=ITS2))+ theme_tree2() + theme(legend.position='left',axis.text.x=element_text(size=25,color="black",angle=45,hjust=0.95),legend.text =ggtext::element_markdown(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=10,r=10),legend.margin = margin(t=10,b=10,l=0,r=0),strip.text = element_text(size=20))+ scale_fill_manual(values = ITS2_colors,labels=bold_vector) + labs(fill="GraftM\nITS2 variant") + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1)) + facet_wrap(~Genomic.Cluster,nrow=1)+ facet_grid(~Genomic.Cluster,scales="free_x", space = "free_x",labeller=as_labeller(c("CB"="CB","GBR_Central_North"="GBR C/N","GBR_South"="S","NC"="NC")))
+
+#Add the kmer cluster info
+
+
+```
+
+
+#Plot the two side by side 
+```{r}
+library(patchwork)
+combine_plot =symportal_plot / symportal_profile_plot / ITS2_barplot + plot_layout(heights = c(1, 0.7,0.8))
+
+combine_plot =symportal_plot / symportal_profile_plot / ITS2_barplot + plot_layout(heights = c(0.7, 1.2,0.5))
+ggsave(combine_plot,filename=paste0(figpath,"ITS2_Comparison_GraftM_Symportal_wprofile.png"),width=25,height=18,dpi=500)
+
+
+#Plot the three side by side 
+
+```
+
+
+
+#Make a tanglegram between unifrac distance based on ITS2 profile and kmer hiearchical clustering
+
+#Clustering based on unifrac distance 
+```{r}
+div_unifrac=read.table(paste0(path,"Symportal_results_coral_ITS2/between_sample_distances/C/20250123T014557_braycurtis_sample_distances_C_sqrt.dist"))
+div_unifrac$eventID=sub("_.*","",div_unifrac$V1)
+div_unifrac$eventID=sub("RRAP-","Aspat_",div_unifrac$eventID)
+div_unifrac=div_unifrac %>% merge(meta_colony %>% dplyr::select(wgsID_short,eventID,locationID),by="eventID",all.y=F)
+colnames(div_unifrac)[4:75]=div_unifrac$eventID
+
+unifrac_dist=div_unifrac %>%
+  select(all_of(unique(names(div_unifrac)))) %>% distinct(wgsID_short,.keep_all = T)
+rownames(unifrac_dist)=unifrac_dist$wgsID_short
+unifrac_dist=unifrac_dist[,4:39]
+
+```
+
+#Get cluster information from kmer 
+```{r}
+library(vegan)
+library(tidyverse)
+library(parallel)
+
+path="C:/Users/Hugo/Documents/Data/symbionts/"
+path_save="C:/Users/Hugo/Documents/Figures/Symbionts/dbRDA/"
+
+#Read response data (kmer D2S matrix )
+kmer_mat=as.matrix(read.table(paste0(path,"D2s_50M_dist_matrix_aspat_clean.txt"),check.names = F))
+
+#Use the all samples matrix instead 
+kmer_mat=as.matrix(read.table(paste0(path,"All_samples_D2s_dist_matrix_formated_50M.txt"),check.names = F))
+rownames(kmer_mat)=sub(".*Aspat-","",rownames(kmer_mat))
+colnames(kmer_mat)=sub(".*Aspat-","",colnames(kmer_mat))
+
+#Some samples seem to have been mis-labeled thus we correct it in the kmer_mat
+rownames(kmer_mat)[rownames(kmer_mat)=="CBHE-767"]="STCR-767"
+colnames(kmer_mat)[colnames(kmer_mat)=="CBHE-767"]="STCR-767"
+rownames(kmer_mat)[rownames(kmer_mat)=="CBLM-635"]="NONA-635"
+colnames(kmer_mat)[colnames(kmer_mat)=="CBLM-635"]="NONA-635"
+rownames(kmer_mat)[rownames(kmer_mat)=="CHBE-1748"]="CBHE-1748"
+colnames(kmer_mat)[colnames(kmer_mat)=="CHBE-1748"]="CBHE-1748"
+rownames(kmer_mat)[rownames(kmer_mat)=="KELS-697"]="MACK-697"
+colnames(kmer_mat)[colnames(kmer_mat)=="KELS-697"]="MACK-697"
+rownames(kmer_mat)[rownames(kmer_mat)=="KELS-992"]="OCCH-992"
+colnames(kmer_mat)[colnames(kmer_mat)=="KELS-992"]="OCCH-992"
+rownames(kmer_mat)[rownames(kmer_mat)=="MART-485"]="HICK-485"
+colnames(kmer_mat)[colnames(kmer_mat)=="MART-485"]="HICK-485"
+rownames(kmer_mat)[rownames(kmer_mat)=="NTDR-528"]="NDIR-528"
+colnames(kmer_mat)[colnames(kmer_mat)=="NTDR-528"]="NDIR-528"
+rownames(kmer_mat)[rownames(kmer_mat)=="NTDR-529"]="NDIR-529"
+colnames(kmer_mat)[colnames(kmer_mat)=="NTDR-529"]="NDIR-529"
+
+#Get subset 
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% rownames(unifrac_dist),colnames(kmer_mat) %in% rownames(unifrac_dist)]
+
+
+```
+
+#Find clusters in the symbiont data 
+```{r}
+Nreads=read.table(paste0(path,"Mapped_symbiont_read_counts_fasta.txt"),col.names=c("sample","Nreads")) %>% mutate(wgsID_short=sub("_.*","",sub(".*Aspat-","",basename(sample))))
+samples_50M=Nreads$wgsID_short[Nreads$Nreads>340000]
+
+
+axis1=2
+axis2=3
+
+metadata=meta_colony%>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster),by.x="locationID",by.y="Site.name") %>% mutate(Shape="1") %>% subset(wgsID_short %in% samples_50M)
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% metadata$wgsID_short,colnames(kmer_mat) %in% metadata$wgsID_short]
+
+K=10
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+  
+kmeans_result <- kmeans(pcoa_scores[,2:3], centers = 5)
+
+colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+pcoa_scores$Cluster=kmeans_result$cluster
+pcoa_scores$Cluster=factor(pcoa_scores$Cluster)
+
+
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+pcoa_scores=pcoa_scores %>% merge(metadata %>% dplyr::select("wgsID_short","Genomic.Cluster"),by="wgsID_short")
+
+
+pcoa_eigenvalues <- pcoa$eig
+expl=pcoa_eigenvalues / sum(pcoa_eigenvalues) * 100
+
+#Convert to percentage explained
+pco1_percent <- round(expl[axis1], 1)
+pco2_percent <- round(expl[axis2], 1)
+pco3_percent <- round(expl[3], 1)
+  
+Coef=3
+text_size=30
+pcoa_plot <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="Cluster"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) 
+
+
+genomic_pcoa_plot <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="Genomic.Cluster"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) + scale_color_manual(values=typecolors,name="Host Genomic Cluster",labels=as_labeller(c("NC"="NC","CB"="CB","GBR_South"="South GBR","GBR_Central_North"="Central/North GBR"))) + guides(shape=F)
+
+ggsave(genomic_pcoa_plot  ,filename=paste0(figpath,"PcoA/PcoA_All_samples_kmer_Global_Host_50M_Pco23_subset340k.png"),height=9,width=17.5,dpi=300)
+
+
+ggsave(pcoa_plot ,filename=paste0(figpath,"PcoA/PcoAAll_samples_kmer_Global_50M_Pco23_subset340k_kmean_clustering.png"),height=9,width=15,dpi=300)
+ggsave(genomic_pcoa_plot  ,filename=paste0(figpath,"PcoA/PcoA_kmer_Global_Host_50M_Pco23_subset340k.png"),height=9,width=17.5,dpi=300)
+```
+
+
+
+#Try to separate the clusters using hiearchical clustering 
+```{r}
+hc <-hclust(as.dist(kmer_mat_sub))
+
+upgma_tree <- upgma(as.dist(kmer_mat_sub))         # Build UPGMA tree
+plot(upgma_tree, main = "UPGMA Tree")  
+
+# Cut the tree into 4 clusters
+clusters <- cutree(hc, k = 4)
+pcoa_scores$Cluster_hc=clusters
+pcoa_scores$Cluster_hc=factor(pcoa_scores$Cluster_hc)
+
+#COlor the pcoa based on clusters
+ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="Cluster_hc"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) 
+```
+
+
+#Make a tanglegram between the two 
+```{r}
+library(ggdendro)
+library(dendextend)
+
+# Required libraries
+library(ggdendro)
+library(dendextend)
+
+pcoa_scores_sub=pcoa_scores %>% subset(wgsID_short %in% symportal_its2$wgsID_short)
+pcoa_scores_sub$Cluster=factor(pcoa_scores_sub$Cluster)
+
+kmer_mat_sub=kmer_mat_sub[rownames(kmer_mat_sub) %in% pcoa_scores_sub$wgsID_short,rownames(kmer_mat_sub) %in% pcoa_scores_sub$wgsID_short]
+unifrac_dist_sub=unifrac_dist[rownames(unifrac_dist) %in% pcoa_scores_sub$wgsID_short,rownames(unifrac_dist) %in% pcoa_scores_sub$wgsID_short]
+
+# Create dendrograms from hclust objects
+hc1 = hclust(as.dist(unifrac_dist_sub))   # Second clustering
+hc2 = hclust(as.dist(kmer_mat_sub))   # First clustering
+
+#Try instead with the pcoa scores excluding the first axis 
+pcoa_mat_sub=pcoa_scores_sub[,2:3]
+rownames(pcoa_mat_sub)=pcoa_scores_sub$wgsID_short
+pcoa_mat_sub=pcoa_mat_sub[rownames(pcoa_mat_sub) %in% labels(hc1),]
+hc2 = hclust(dist(pcoa_mat_sub))
+
+
+#Color the unifrac dendogram by the dominant ITS2
+sym=symportal_its2 %>% gather(A3:`21594_C`,key="ITS2",value="Rel_abund")
+dominant_ITS2=data.frame()
+for(s in unique(sym$wgsID_short)){
+  topITS2=sym$ITS2[sym$Rel_abund==max(sym$Rel_abund[sym$wgsID_short==s])]
+  dominant_ITS2=rbind(dominant_ITS2,data.frame(wgsID_short=s,Dominant_ITS2=topITS2))
+}
+
+DIV_colors_sub=c("C3bo"="#BF6E1B", "C3k" ="#8B4513", "C50c"="#009166" ,"C50b"="#0EA37A")
+
+
+#Color the kmer dendogram by the cluster 
+
+cluster_col=c("1"="#F8766D","2"="#A3A500","3"="#00BF7D","4"="#00B0F6", "5"="#E76BF3")
+
+
+# Convert the hclust objects to dendrogram objects
+dend1 <- as.dendrogram(hc1) %>%
+  set("labels_cex", 4) 
+
+dend12=dend1  %>%
+  set("labels_col", DIV_colors_sub[as.factor(unlist(lapply(labels(dend1), 
+                                                      function(x) { dominant_ITS2[dominant_ITS2$wgsID_short == x, "Dominant_ITS2"] })))])
+
+
+
+dend2<- as.dendrogram(hc2) %>%
+  set("labels_cex",4)
+
+dend22 = dend2 
+# dend22 = dend2 %>%
+#   set("labels_col", cluster_col[as.factor(unlist(lapply(labels(dend2), 
+#                                                       function(x) { pcoa_scores_sub[pcoa_scores_sub$wgsID_short == x, "Cluster"] })))])
+
+
+# Now, create a tanglegram using the dendrogram objects
+dendCombined <- dendlist(dend12, dend22)
+
+
+png(height=465, width=1000, file=paste0(figpath,"ITS2_Unifrac_kmer_tanglegram_V2.png"), res=300, units='mm')
+dendCombined2<-dendCombined %>%
+  untangle(method = "step2side") %>%
+  tanglegram(common_subtrees_color_lines = F,
+             highlight_distinct_edges = F,
+             highlight_branches_lwd = F,
+             common_subtrees_color_lines_default_single_leaf_color = "black",
+             lwd = 2,
+             sort = F,add_points=T,columns_width=c(6,2,6),edge.lwd=4,left_dendo_mar=c(2.1,5,2.1,20),right_dendo_mar=c(2.1,20,2.1,5))
+dev.off()
+```
+
+
+
+
+#Plot the two side by side 
+```{r}
+library(patchwork)
+combine_plot =symportal_plot / ITS2_barplot
+# Combine the dendrogram and the combined plot
+final_plot <- dendro_plot / combine_plot
+
+ggsave(combine_plot,filename=paste0(figpath,"ITS2_Comparison_GraftM_Symportal.png"),width=20,height=10,dpi=500)
+
+```
+
+
+#Assign clusters in the symbiont data using K=4
+```{r}
+axis1=2
+axis2=3
+
+kmer_mat=as.matrix(read.table(paste0(path,"D2s_50M_dist_matrix_aspat_clean.txt"),check.names = F))
+
+Nreads=read.table(paste0(path,"Mapped_symbiont_read_counts_fasta.txt"),col.names=c("sample","Nreads")) %>% mutate(wgsID_short=sub("_.*","",sub(".*Aspat-","",basename(sample))))
+samples_50M=Nreads$wgsID_short[Nreads$Nreads>340000]
+
+metadata=meta_colony%>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster),by.x="locationID",by.y="Site.name") %>% mutate(Shape="1") %>% subset(wgsID_short %in% samples_50M)
+
+#Clustering australian samples
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% metadata$wgsID_short[metadata$Country=="Australia"],colnames(kmer_mat) %in% metadata$wgsID_short[metadata$Country=="Australia"]]
+
+K=10
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+  
+kmeans_result <- kmeans(pcoa_scores[,2:3], centers = 3,nstart=10)
+
+#Identify outliers based on the quantile method
+distances <- sqrt(rowSums((pcoa_scores[,2:3] - kmeans_result$centers[kmeans_result$cluster, ])^2))
+
+# Define threshold for outliers using 1.5 * IQR rule
+Q1 <- quantile(distances, 0.25)  # 1st quartile
+Q3 <- quantile(distances, 0.75)  # 3rd quartile
+IQR_value <- Q3 - Q1
+upper_threshold <- Q3 + 1.5 * IQR_value  # Outlier threshold
+# Identify outliers
+outliers <- distances > upper_threshold
+outliers_ID=names(outliers)[outliers==TRUE]
+
+pcoa_scores$Cluster=kmeans_result$cluster
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+pcoa_scores=pcoa_scores %>% mutate(Cluster=if_else(wgsID_short %in% outliers_ID,NA,Cluster))
+pcoa_scores$Cluster=factor(pcoa_scores$Cluster)
+
+pcoa_scores=pcoa_scores %>% merge(metadata %>% dplyr::select("wgsID_short","Genomic.Cluster"),by="wgsID_short")
+
+pcoa_eigenvalues <- pcoa$eig
+expl=pcoa_eigenvalues / sum(pcoa_eigenvalues) * 100
+
+axis1=2
+axis2=3
+pco1_percent <- round(expl[axis1], 1)
+pco2_percent <- round(expl[axis2], 1)
+
+cluster_corresp=data.frame(Cluster=c(1,2,3),ITS2=c("C50c","C50b","C3k"))
+pcoa_scores=pcoa_scores %>% merge(cluster_corresp,by="Cluster",all.x=T)
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+Coef=3
+text_size=30
+
+pcoa_plot23 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) + scale_color_manual(values=cluster_colors) + labs(color="Majority ITS2")
+
+ggsave(pcoa_plot23 ,filename=paste0(figpath,"PcoA_v2/PcoA_Aus_sup50Mbp_colored_ITS2.png"),width=14,height=12,dpi=500)
+
+
+#Save cluster assignation data 
+cluster_corresp=data.frame(Cluster=c(1,2,3),ITS2=c("C50b","C50c","C3k"))
+
+cluster_df_aus=data.frame(wgsID_short=pcoa_scores$wgsID_short,Cluster=pcoa_scores$Cluster,Genomic.cluster=pcoa_scores$Genomic.Cluster) %>% merge(metadata %>% dplyr::select(wgsID_short,locationID,Lon,Lat),by="wgsID_short") %>% mutate(filter=">50Mbp") 
+cluster_df_aus=cluster_df_aus %>% merge(cluster_corresp,by="Cluster",all.x=T)
+
+#Find clusters in NC samples 
+#Clustering australian samples
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% metadata$wgsID_short[metadata$Country=="New_Caledonia"],colnames(kmer_mat) %in% metadata$wgsID_short[metadata$Country=="New_Caledonia"]]
+
+kmer_mat_sub=kmer_mat_sub[rownames(kmer_mat_sub)!="CB3-8",colnames(kmer_mat_sub)!="CB3-8"]
+
+#CB3-8
+
+K=10
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+  
+kmeans_result <- kmeans(pcoa_scores[,2:3], centers = 2,nstart=10)
+
+#Identify outliers based on the quantile method
+distances <- sqrt(rowSums((pcoa_scores[,2:3] - kmeans_result$centers[kmeans_result$cluster, ])^2))
+
+# Define threshold for outliers using 1.5 * IQR rule
+Q1 <- quantile(distances, 0.25)  # 1st quartile
+Q3 <- quantile(distances, 0.75)  # 3rd quartile
+IQR_value <- Q3 - Q1
+upper_threshold <- Q3 + 1.5 * IQR_value  # Outlier threshold
+# Identify outliers
+outliers <- distances > upper_threshold
+outliers_ID=names(outliers)[outliers==TRUE]
+
+pcoa_scores$Cluster=kmeans_result$cluster
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+pcoa_scores=pcoa_scores %>% mutate(Cluster=if_else(wgsID_short %in% outliers_ID,NA,Cluster))
+pcoa_scores$Cluster=factor(pcoa_scores$Cluster)
+
+pcoa_scores=pcoa_scores %>% merge(metadata %>% dplyr::select("wgsID_short","Genomic.Cluster"),by="wgsID_short")
+
+pcoa_eigenvalues <- pcoa$eig
+expl=pcoa_eigenvalues / sum(pcoa_eigenvalues) * 100
+
+axis1=2
+axis2=3
+pco1_percent <- round(expl[axis1], 1)
+pco2_percent <- round(expl[axis2], 1)
+
+Coef=3
+text_size=30
+
+cluster_corresp=data.frame(Cluster=c(2,1),ITS2=c("C50b","C3k/C3bo"))
+pcoa_scores=pcoa_scores %>% merge(cluster_corresp,by="Cluster",all.x=T)
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+pcoa_plot23 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) + scale_color_manual(values=cluster_colors) + labs(color="Majority ITS2")
+
+ggsave(pcoa_plot23 ,filename=paste0(figpath,"PcoA_v2/PcoA_NC_sup50Mbp_colored_ITS2.png"),width=14,height=12,dpi=500)
+
+#Save cluster assignation data 
+cluster_corresp=data.frame(Cluster=c(1,2),ITS2=c("C50b","C3k/C3bo"))
+
+cluster_df_nc=data.frame(wgsID_short=pcoa_scores$wgsID_short,Cluster=pcoa_scores$Cluster,Genomic.cluster=pcoa_scores$Genomic.Cluster) %>% merge(metadata %>% dplyr::select(wgsID_short,locationID,Lon,Lat),by="wgsID_short") %>% mutate(filter=">50Mbp") 
+cluster_df_nc=cluster_df_nc %>% merge(cluster_corresp,by="Cluster",all.x=T)
+
+#Merge clusters together and save
+cluster_df=rbind(cluster_df_aus,cluster_df_nc)
+
+write.table(cluster_df,paste0(path,"Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),row.names=F,quote=F,sep="\t")
+
+
+#Find clusters directly on the whole dataset 
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% metadata$wgsID_short,colnames(kmer_mat) %in% metadata$wgsID_short]
+
+K=10
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+  
+kmeans_result <- kmeans(pcoa_scores[,2:3], centers = 4,nstart=10)
+
+#Identify outliers based on the quantile method
+distances <- sqrt(rowSums((pcoa_scores[,2:3] - kmeans_result$centers[kmeans_result$cluster, ])^2))
+
+# Define threshold for outliers using 1.5 * IQR rule
+Q1 <- quantile(distances, 0.25)  # 1st quartile
+Q3 <- quantile(distances, 0.75)  # 3rd quartile
+IQR_value <- Q3 - Q1
+upper_threshold <- Q3 + 2.5 * IQR_value  # Outlier threshold
+
+# Identify outliers
+outliers <- distances > upper_threshold
+outliers_ID=names(outliers)[outliers==TRUE]
+
+pcoa_scores$Cluster=kmeans_result$cluster
+
+#Assing NA value to outliers
+
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+pcoa_scores=pcoa_scores %>% mutate(Cluster=if_else(wgsID_short %in% outliers_ID,NA,Cluster))
+
+pcoa_scores$Cluster=factor(pcoa_scores$Cluster)
+
+
+pcoa_scores=pcoa_scores %>% merge(metadata %>% dplyr::select("wgsID_short","Genomic.Cluster"),by="wgsID_short")
+
+
+pcoa_eigenvalues <- pcoa$eig
+expl=pcoa_eigenvalues / sum(pcoa_eigenvalues) * 100
+
+#Convert to percentage explained
+axis1=2
+axis2=3
+pco1_percent <- round(expl[axis1], 1)
+pco2_percent <- round(expl[axis2], 1)
+pco3_percent <- round(expl[3], 1)
+
+#Assign dominant ITS2 to each cluster
+cluster_corresp=data.frame(Cluster=c(1,2,3,4),ITS2=c("C50b","C50c","C3k","C3k/C3bo"))
+pcoa_scores=pcoa_scores %>% merge(cluster_corresp,by="Cluster",all.x=T)
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+
+pcoa_plot23 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm"))  + scale_color_manual(values=cluster_colors) + labs(color="Majority ITS2")
+
+axis1=1
+axis2=2
+pco1_percent <- round(expl[axis1], 1)
+pco2_percent <- round(expl[axis2], 1)
+pco3_percent <- round(expl[3], 1)
+
+pcoa_plot12 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="none",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm"))  + scale_color_manual(values=cluster_colors) + labs(color="Majority ITS2")
+
+pca_combine_plot=cowplot::ggdraw() +draw_plot(pcoa_plot12,x=0,y=0,width=0.43,height=1) +draw_plot(pcoa_plot23,x=0.43,y=0,width=0.57,height=1) + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b"),x=c(0,0.45),y=c(1,1),size=35)+ theme(legend.key.width =unit(5,"cm"))
+
+ggsave(pca_combine_plot ,filename=paste0(figpath,"PcoA_v2/PcoA_aspa_clean_sup50Mbp_colored_ITS2.png"),width=26,height=12,dpi=500)
+
+
+#Same thing colored by genomic clusters
+typecolors<-c("#016765","#079CEF","#FFCC33","#CC791E")
+names(typecolors)<-c("NC","CB","GBR_South","GBR_Central_North")
+
+axis1=2
+axis2=3
+pcoa_plot23 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="Genomic.Cluster"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm"))  + scale_color_manual(values=typecolors) + labs(color="Majority ITS2")
+
+axis1=1
+axis2=2
+pcoa_plot12 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="Genomic.Cluster"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="none",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm"))  + scale_color_manual(values=typecolors) + labs(color="Majority ITS2")
+
+pca_combine_plot=cowplot::ggdraw() +draw_plot(pcoa_plot12,x=0,y=0,width=0.43,height=1) +draw_plot(pcoa_plot23,x=0.43,y=0,width=0.57,height=1) + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b"),x=c(0,0.45),y=c(1,1),size=35)+ theme(legend.key.width =unit(5,"cm"))
+
+ggsave(pca_combine_plot ,filename=paste0(figpath,"PcoA_v2/PcoA_aspa_clean_sup50Mbp_colored_Genomic.Cluster.png"),width=26,height=12,dpi=500)
+
+
+#PcoA with only C3 samples 
+cluster_df=read.table(paste0(path,"Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
+
+
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% cluster_df$wgsID_short[cluster_df$ITS2 %in% c("C3k","C3k/C3bo")],colnames(kmer_mat) %in% cluster_df$wgsID_short[cluster_df$ITS2 %in% c("C3k","C3k/C3bo")]]
+
+kmer_mat_sub=kmer_mat_sub[rownames(kmer_mat_sub)!="CB3-8",colnames(kmer_mat_sub)!="CB3-8"]
+
+#CB3-8
+
+K=10
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+  
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+
+pcoa_scores=pcoa_scores %>% merge(cluster_df %>% dplyr::select("wgsID_short","ITS2"),by="wgsID_short")
+
+pcoa_eigenvalues <- pcoa$eig
+expl=pcoa_eigenvalues / sum(pcoa_eigenvalues) * 100
+
+axis1=1
+axis2=2
+pco1_percent <- round(expl[axis1], 1)
+pco2_percent <- round(expl[axis2], 1)
+
+Coef=3
+text_size=30
+
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+pcoa_plot12 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) + scale_color_manual(values=cluster_colors) + labs(color="Majority ITS2")
+
+ggsave(pcoa_plot12 ,filename=paste0(figpath,"PcoA_v2/PcoA_C3_sup50Mbp_colored_ITS2.png"),width=14,height=12,dpi=500)
+
+
+#Only C50 samples
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% cluster_df$wgsID_short[cluster_df$ITS2 %in% c("C50b","C50c")],colnames(kmer_mat) %in% cluster_df$wgsID_short[cluster_df$ITS2 %in% c("C50b","C50c")]]
+
+kmer_mat_sub=kmer_mat_sub[rownames(kmer_mat_sub)!="CB3-8",colnames(kmer_mat_sub)!="CB3-8"]
+
+#CB3-8
+
+K=10
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+  
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+
+pcoa_scores=pcoa_scores %>% merge(cluster_df %>% dplyr::select("wgsID_short","ITS2"),by="wgsID_short")
+
+pcoa_eigenvalues <- pcoa$eig
+expl=pcoa_eigenvalues / sum(pcoa_eigenvalues) * 100
+
+axis1=2
+axis2=3
+pco1_percent <- round(expl[axis1], 1)
+pco2_percent <- round(expl[axis2], 1)
+
+Coef=3
+text_size=30
+
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+pcoa_plot12 <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) + scale_color_manual(values=cluster_colors) + labs(color="Majority ITS2")
+
+ggsave(pcoa_plot12 ,filename=paste0(figpath,"PcoA_v2/PcoA_C50_sup50Mbp_colored_ITS2.png"),width=14,height=12,dpi=500)
+
+
+# 
+# 
+# 
+# #Save the plot colored by dominant ITS2
+# 
+# 
+# #Save the same plot colored by host clusters
+# 
+# 
+# #Save cluster assignation data 
+# cluster_corresp=data.frame(Cluster=c(2,1,4,3),ITS2=c("C3k/C3bo","C50b","C50c","C3k"))
+# 
+# cluster_df=data.frame(wgsID_short=pcoa_scores$wgsID_short,Cluster=pcoa_scores$Cluster,Genomic.cluster=pcoa_scores$Genomic.Cluster) %>% merge(metadata %>% dplyr::select(wgsID_short,locationID,Lon,Lat),by="wgsID_short") %>% mutate(filter=">50Mbp") 
+# 
+# #Correct clusters assignation for samples on the edge
+# cluster_df$Cluster[cluster_df$Genomic.cluster=="CB"]=2
+# cluster_df$Cluster[cluster_df$Genomic.cluster=="GBR_Central_North" & cluster_df$Cluster==2]=3
+# cluster_df$Cluster[cluster_df$Genomic.cluster=="NC" & cluster_df$Cluster==3]=2
+# cluster_df$Cluster[cluster_df$Genomic.cluster=="GBR_South" & cluster_df$Cluster==2]=3
+# cluster_df=cluster_df %>% merge(cluster_corresp,by="Cluster")
+# 
+# write.table(cluster_df,paste0(path,"Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR.txt"),row.names=F,quote=F,sep="\t")
+```
+
+
+#Make map with distribution of symbionts clusters as per the host 
+```{r}
+#1. Plot base map font
+site_coordinates=xlsx::read.xlsx("C:/Users/Hugo/Documents/Data/Summary_collection_assays.xlsx",sheetName = "Feuil1",check.names=F,rowIndex=1:30,colIndex = 1:7,colClasses = c(rep("character",2),rep("numeric",5)))
+site_coordinates$Lon[16]=166.3273667
+colnames(site_coordinates)[5]="MMM"
+colnames(site_coordinates)[2]="Site.name"
+
+#Reef shapefile
+unep_reef_uncrop<-sf::st_read("E:/Hugo/Master 2/Master_OBEM/Stage/Data/14_001_WCMC008_CoralReefs2018_v4_1/01_Data/WCMC008_CoralReef2018_Py_v4_1.shp")
+
+#Countries border 
+australia_border<-raster::getData("GADM",country="AUS",level=0)
+ncl_border<-raster::getData("GADM",country="NCL",level=0)
+van_border<-geodata::gadm(country="VUT",level=0,path="C:/Users/Hugo/geodata/")
+#Convert Vanuatu spat vector to sf 
+van_border=sf::st_as_sf(van_border)
+
+#World border
+world=rnaturalearth::ne_countries(returnclass = "sf")["geometry"]
+
+world_map=ggplotGrob(ggplot(data = world) +
+    geom_sf(fill="white",colour="black")+
+  geom_rect(aes(xmin = 2564417, xmax = 5174417, ymin = 1564417, ymax = 3064417), color = "#092347", fill = NA,size=1) +
+    coord_sf(crs = "+proj=laea +lat_0=-10 +lon_0=160 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs") +theme_void())
+
+#Add bathymetry background rather than MMM
+library(ggOceanMaps)
+library(ggspatial)
+library(scatterpie)
+library(ggnewscale)
+
+
+
+site_map=basemap(limits = c(144,169, -26,-13),
+        bathymetry = TRUE,land.col=NA,land.border.col=NA,
+        glaciers = FALSE,legend.position="none",bathy.style = "rcb",bathy.alpha=0.5)  + geom_polygon(data=ncl_border, aes(long,lat,group=group),fill="grey",colour="grey40",size=0.3) + geom_polygon(data=australia_border, aes(long,lat,group=group),fill="grey",colour="grey40",size=0.3)+ geom_sf(data=van_border ,fill="grey",colour="grey40",size=0.3)+ geom_sf(data = unep_reef_uncrop['LAYER_NAME'],fill="grey",color="grey40",xlim=c(144,167),ylim=c(-25,-12),size=0.3)+ theme(legend.title = element_text(size=17,color="black",margin=margin(t = 0, r = 7, b = 35, l = 0)),legend.text = element_text(size=17,color="black"),legend.background = element_rect(fill = "transparent",colour = "transparent"),legend.key.height = unit(4,"mm"),legend.key.width = unit(20,"mm"),legend.position = "none",legend.margin=margin(0,0,0,0),
+        legend.box.margin=margin(-10,0,0,0),axis.text.x = element_text(size=20,color="#092347",vjust = -0.7,hjust=-0.2,
+                                 margin = margin( t = -30)),axis.text.y=element_text(size=20,color="#092347",hjust = -0.9,vjust=-0.3,margin=margin(l=0,r=-45,b=0,t=0)),plot.background= element_rect(fill="white", colour="white"),panel.background = element_rect(fill="transparent", colour="#092347",linewidth=1.1),axis.ticks =element_blank())+ labs(x="",y="")+
+  scale_y_continuous(labels = ~ paste0(.x, "\u00B0"))+
+  scale_x_continuous(labels = ~ paste0(.x, "\u00B0"))+
+  ggspatial::annotation_scale(
+    location = "tr",
+    bar_cols = c("#092347", "white"),
+    text_family = "ArcherPro Book",line_width = 1.5,text_cex=2
+  ) + ggspatial::annotation_north_arrow(location = "tr", which_north = "true", pad_x = unit(0.4, "in"), pad_y = unit(0.4, "in"),height=unit(2,"cm"),width=unit(2,"cm"), style = north_arrow_fancy_orienteering(fill = c("#092347", "white"))) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")+ geom_point(data=site_coordinates,aes(x=Lon,y=Lat),size=3,shape=21, color="#092347",fill="#092347") + guides(fill="none",color="none")
+
+
+
+#2. Plot pie chart with admixture proportion of each symbiont cluster on top 
+# cluster_df=read.table(paste0(path,"Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata.txt"),check.names=F,sep="\t",header=T)
+
+cluster_df=read.table(paste0(path,"Cluster/D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
+
+
+
+#Remove samples that were outleirs
+cluster_df=cluster_df %>% subset(!is.na(Cluster))
+
+
+
+#Combine with metadata and compute average per site 
+cluster_df$Lon=as.numeric(cluster_df$Lon)
+cluster_df$Lat=as.numeric(cluster_df$Lat)
+cluster_df_site=cluster_df %>% group_by(locationID) %>% mutate(Lon=mean(Lon,na.rm=T),Lat=mean(Lat,na.rm=T)) %>% ungroup() %>%  group_by(locationID,ITS2) %>% dplyr::summarize(Occurence=n(),Lat=mean(Lat,na.rm=T),Lon=mean(Lon,na.rm=T)) %>% pivot_wider(names_from = "ITS2",values_from = "Occurence", values_fill = list(Occurence = 0))
+
+#Add sites coordinates and adjusted positions to plot the pies on the map
+cluster_df_site=cbind(cluster_df_site,data.frame(x.adj=c(-1,1,1,-1,1,2,1,-0.5,1,2,1,-1.5,-1,-1,-1,1.5,2,-1,-0.6,1,2,1,-1,1,2,1,1,-1,1),y.adj=c(-0.2,-0.5,1,1,0.5,-0.5,-1,0,0,0.5,1,-1,0,0.5,0,0.5,-1,-0.4,-0.2,0,0.5,-0.3,0,0.5,1,0.5,0,-0.5,0)))
+cluster_df_site=cluster_df_site %>% mutate(Lon.adj=Lon+x.adj,Lat.adj=Lat+y.adj)
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+#Normalize values for the pie plot 
+cluster_df_site$Tot=rowSums(cluster_df_site[,4:7])
+cluster_df_site[,4:7]=cluster_df_site[,4:7]/cluster_df_site$Tot
+
+#Add the pie chart on the top of the plot 
+site_map_pie=site_map + geom_segment(data=cluster_df_site,aes(x=Lon,xend=Lon.adj,y=Lat,yend=Lat.adj),size=0.7,colour="#092347") + new_scale_fill()  + geom_scatterpie(data=cluster_df_site,aes(x=Lon.adj,y=Lat.adj),cols=c("C3k/C3bo","C50c","C3k","C50b"),pie_scale = 0.9,colour=NA) + scale_fill_manual(values=cluster_colors) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs") + theme(legend.key.height = unit(10,"mm"),legend.key.width = unit(10,"mm"),legend.position = "none") + labs(fill="ITS2 type")
+
+# Create an external legend
+legend_plot <- ggplot(data.frame(Cluster = names(cluster_colors), x = 1, y = 1), 
+                      aes(x, y, color = Cluster)) +
+  geom_point(size = 9) +  
+  scale_color_manual(values = cluster_colors) +
+  theme_void() +  
+  theme(legend.position = "bottom", legend.title = element_blank(),legend.text=element_text(size=27,color="black"),legend.background = element_rect(fill="transparent",color="transparent"))
+legend <- ggpubr::get_legend(legend_plot)
+
+full_site_map<-site_map_pie+ annotation_custom(grob=world_map,xmin=145,xmax=149.5,ymin=-Inf,ymax=-20) + annotation_custom(grob=world_map,xmin=145,xmax=149.5,ymin=-Inf,ymax=-20)
+
+
+
+full_site_map=ggdraw()+draw_plot(full_site_map,x=0,y=0,width=1,height=1)+draw_plot(legend,x=0.35,y=0.9,width=0.2,height=0.1)
+
+ggsave(full_site_map,filename=paste0(figpath,"Maps/Symbionts_cluster_map_outliers_1.5IQR_per_region.png"),width=22,height=10,dpi=500)
+# 
+# 
+# a=ggplot() + geom_segment(data=cluster_df_site,aes(x=Lon,xend=Lon.adj,y=Lat,yend=Lat.adj),size=0.7,colour="#092347") + new_scale_fill()  + geom_scatterpie(data=cluster_df_site,aes(x=Lon.adj,y=Lat.adj),cols=c("C3k/C3bo","C50c","C3k","C50b"),pie_scale = 0.9,colour=NA) + scale_fill_manual(values=cluster_colors) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs") + theme(legend.key.height = unit(10,"mm"),legend.key.width = unit(10,"mm"),legend.position = "none") + labs(fill="ITS2 type")
+
+```
+
+######################## TRASH #######################"
+
+#Repat the PcoA for the subset of C3 samples
+```{r}
+C3_samples_subset=symportal_profiles$wgsID_short[symportal_profiles$ITS2 %in% c("C3k","C3bo/C3k","C3bo") & symportal_profiles$Abund==1]
+
+K=10
+pcoa_sub= cmdscale(as.dist(kmer_mat[rownames(kmer_mat) %in% C3_samples_subset,colnames(kmer_mat) %in% C3_samples_subset]), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa_sub$points)
+
+colnames(pcoa_scores)=paste0("PCo",seq(1,K))
+
+symportal_profiles_sub=symportal_profiles %>% subset(Abund==1 & wgsID_short %in% C3_samples_subset) 
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+pcoa_scores=pcoa_scores %>% merge(symportal_profiles_sub %>% dplyr::select(c(wgsID_short,ITS2)),by="wgsID_short")
+
+
+  
+axis1=2
+axis2=3
+pcoa_eigenvalues <- pcoa$eig
+expl=pcoa_eigenvalues / sum(pcoa_eigenvalues) * 100
+
+#Convert to percentage explained
+pco1_percent <- round(expl[axis1], 1)
+pco2_percent <- round(expl[axis2], 1)
+pco3_percent <- round(expl[3], 1)
+
+Coef=3
+text_size=30
+pcoa_plot <- ggplot(aes_string(x = paste0("PCo",axis1), y = paste0("PCo",axis2),color="ITS2"),data = pcoa_scores) +
+  # Plot site scores
+  geom_point( size = 5,alpha=0.8) +
+  # Labels and theme
+  labs(x = paste0("PCo",axis1," (",pco1_percent,"%)"), y = paste0("PCo",axis2," (",pco2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size,color="black",margin = margin(t = 0, r = 20, b = 15, l = 0)),legend.text = element_text(size=text_size,color="black"),legend.position ="right",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "grey", size=1.5),legend.key = element_blank())+ theme(legend.key.width=unit(1.5,"cm"),legend.key.height=unit(0.7,"cm")) + scale_color_manual(values=profile_colors)
+```
+

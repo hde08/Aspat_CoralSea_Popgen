@@ -1,0 +1,201 @@
+---
+title: "Compare_sequencing_batches"
+author: "Hugo DENIS"
+date: "2024-08-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Packages
+```{r}
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(adegenet)
+library(dartR)
+```
+
+## Script to plot the result of tests aimed to assess potential batch effect between GBR samples sequenced at CSIRO and New Caledonia samples sequenced at Macrogen. 
+#To assess any potential batch effect, we use a subset of 21 GBR samples that were sequenced at both facilities alongside other samples. 
+
+#Path to data 
+```{r}
+path="/nvme/disk0/lecellier_data/Compare_sequencing_batch/"
+figpath="/home/hdenis/Coral-Genomics/Figures/Compare_sequencing_batch/Final_plots/"
+```
+
+
+#1. Perform PCA analyses
+
+#We use a subset of the total VCF file that only includes samples that were sequenced at both facilities 
+```{r}
+#Convert vcf file to genlight object
+comp_batch=gl.read.vcf(paste0("/nvme/disk0/lecellier_data/WGS_GBR_NC_data/Vcf_files/aspat_clean_all_chr_SNP_filtered_2_20mis_reseqindividuals_MAF0.01.vcf.gz"),verbose=NULL)
+
+#Exclude one sample that had sequencing issues
+comp_batch=gl.drop.ind(comp_batch,ind=c("RRAP-1715_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-FITZ-1715_L2_pe_aln_Amilleporav3","RRAP-1764_pe_aln_Amilleporav3","RRAP-1766_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1766_L1_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1764_L1_pe_aln_Amilleporav3","RRAP-1762_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1762_L1_pe_aln_Amilleporav3"))
+
+Nsites=length(comp_batch$loc.names)
+
+cov=glPca(comp_batch,parallel=T,nf=10)
+
+saveRDS(cov,paste0(path,"aspat_clean_all_chr_SNP_filtered_2_20mis_reseqindividuals_MAF0.01.cov.rds"))
+
+#cov=readRDS(paste0(path,"aspat_clean_all_chr_SNP_filtered_2_20mis_reseqindividuals_MAF0.01.cov.rds"))
+
+#Correct one sample name and add batch information
+cov.scores=data.frame(cov$scores)
+cov.scores$sample=rownames(cov.scores)
+cov.scores$sample[cov.scores$sample=="RRAP-ECT01-2022-Aspat-CHBE-1748_L1_pe_aln_Amilleporav3"]="RRAP-ECT01-2022-Aspat-CBHE-1748_L1_pe_aln_Amilleporav3"
+
+#Remove some samples that happened to be clones 
+cov.scores=cov.scores %>% mutate(Batch=if_else(grepl("ECT01",sample),"Batch 1","Batch 2")) %>% subset(!sample %in% c("RRAP-1715_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-FITZ-1715_L2_pe_aln_Amilleporav3","RRAP-1764_pe_aln_Amilleporav3","RRAP-1766_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1766_L1_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1764_L1_pe_aln_Amilleporav3","RRAP-1762_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1762_L1_pe_aln_Amilleporav3")) %>% mutate(Colony=sub("_.*","",sub(".*-","",sub("-B","",sub(".*Aspat-","",sub("_L.*","",sample)))))) 
+
+#Add information on South vs North Clusters
+meta=read.csv('/home/hdenis/Data/Colony_metadata_Aspat_GBR_NC.txt')
+south_samples=(cov.scores %>% subset(grepl("ECT01",sample)) %>% mutate(wgsID_short=sub(".*Aspat-","",sub("_L.*","",sample))) %>% mutate(Colony=sub(".*-","",wgsID_short)) %>% merge(meta,by="wgsID_short") %>% subset(locationID %in% c("Fitzroy Reef","Heron","Lady Musgrave")))$Colony
+
+cov.scores=cov.scores %>% mutate(Colony=sub("_.*","",sub(".*-","",sub("-B","",sub(".*Aspat-","",sub("_L.*","",sample)))))) %>% mutate(Cluster=if_else(Colony %in% south_samples,"South","Central/North"))
+
+#Percentage of variance explained by each principal component
+pve_all=data.frame(1:10,100*cov$eig[1:10]/sum(cov$eig))
+
+#Save PCA for the first 10 PCA axes
+for(i in 1){
+  perc1=round(100*cov$eig[i]/sum(cov$eig),2)
+  perc2=round(100*cov$eig[i+1]/sum(cov$eig),2)
+  
+  PC1=paste0("PC",as.character(i))
+  PC2=paste0("PC",as.character(i+1))
+  
+  pca = ggplot(data = cov.scores, aes_string(x=PC1, y=PC2, fill = "Batch",color="Batch",pch="Cluster")) + geom_point(size=7)+ theme_classic() + theme(axis.text.x = element_text(size=30,colour='black'),axis.text.y = element_text(size=30,colour='black'),axis.title.y = element_text(size=30,colour='black'),axis.title.x = element_text(size=30,colour='black'),legend.text=element_text(size=22),legend.title=element_text(size=25),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position="right",legend.text.align = 0,legend.background = element_rect(fill="transparent")) + labs(x=paste0(PC1," (",as.character(perc1),"%)"),y=paste0(PC2," (",as.character(perc2),"%)"),title="",color="Batch",shape="Genomic cluster") + stat_ellipse(aes(group=Cluster),level=0.95)
+  
+  ggsave(pca,filename=paste0(figpath,"PCA_aspat_clean_all_chr_SNP_filtered_2_20mis_reseqindividuals_MAF0.01",PC1,"-",PC2,".png"),width=14,height=12,dpi=320)
+}
+
+#To add labels 
+# + ggrepel::geom_label_repel(aes(label=Colony),size=4,fill=NA,box.padding=0.5,label.padding=0.1,segment.color="grey50",color="black",label.size=NA)
+
+#To add title
+#paste0("Nsites =",as.character(Nsites), ", MAF>0.01, Missing<0.2")
+```
+
+#IBS comparison of replicates to other colonies
+```{r}
+library(dendextend)
+library(data.table)
+
+
+relatedness=read.table(paste0(path,"aspat_clean_all_chr_SNP_filtered_2_20mis_reseqindividuals_100random.relatedness"),header=T)
+
+#Convert to matrix format 
+individuals <- unique(c(relatedness$INDV1, relatedness$INDV2))
+
+# Initialize the pairwise distance matrix
+dist_matrix <- matrix(NA, nrow = length(individuals), ncol = length(individuals))
+rownames(dist_matrix) <- individuals
+colnames(dist_matrix) <- individuals
+
+# Populate the distance matrix
+for (i in 1:nrow(relatedness)) {
+  ind1 <- relatedness$INDV1[i]
+  ind2 <- relatedness$INDV2[i]
+  rel <- relatedness$RELATEDNESS[i]
+  dist_matrix[ind1, ind2] <- rel
+  dist_matrix[ind2, ind1] <- rel
+}
+
+# Set diagonal to 0
+diag(dist_matrix) <- 0
+
+#Convert relatedness to distance
+dist_matrix <- 1 - dist_matrix
+
+#Remove 1715 problematic colony
+dist_matrix=dist_matrix[!rownames(dist_matrix) %in% c("RRAP-1715_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-FITZ-1715_L2_pe_aln_Amilleporav3","RRAP-1764_pe_aln_Amilleporav3","RRAP-1766_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1766_L1_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1764_L1_pe_aln_Amilleporav3","RRAP-1762_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1762_L1_pe_aln_Amilleporav3"),!colnames(dist_matrix) %in% c("RRAP-1715_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-FITZ-1715_L2_pe_aln_Amilleporav3","RRAP-1764_pe_aln_Amilleporav3","RRAP-1766_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1766_L1_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1764_L1_pe_aln_Amilleporav3","RRAP-1762_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1762_L1_pe_aln_Amilleporav3")]
+
+names=read.table("/nvme/disk0/lecellier_data/WGS_GBR_NC_data/Vcf_files/aspat_random100_resequenced.filelist.txt",col.names=c("sample"))
+names=names %>% mutate(Batch=if_else(grepl("ECT01",sample),"GBR_batch","NC_batch")) %>% subset(!sample %in% c("RRAP-1715_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-FITZ-1715_L2_pe_aln_Amilleporav3","RRAP-1764_pe_aln_Amilleporav3","RRAP-1766_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1766_L1_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1764_L1_pe_aln_Amilleporav3","RRAP-1762_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-CBHE-1762_L1_pe_aln_Amilleporav3"))
+names=names %>% mutate(Colony=sub("_.*","",sub(".*-","",sub("-B","",sub(".*Aspat-","",sub("_L.*","",sample)))))) 
+
+
+#Get list of technical replicates (among facilities)
+reseq_diffbatch=(names %>% subset(grepl("RRAP",sample) & !grepl("ECT01",sample)))$Colony
+reseq_samebatch=(names %>% subset(grepl("-B",sample)))$Colony
+
+reseq_samples_diffbatch=names$sample[names$Colony %in%reseq_diffbatch]
+reseq_samples_samebatch=names$sample[names$Colony %in%reseq_samebatch]
+
+#Get max IBS distance technical replicates within same batch
+max_samebatch=dist_matrix["RRAP-ECT01-2022-Aspat-STCR-750-B_L3_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-STCR-750_L3_pe_aln_Amilleporav3"]
+
+max_diffbatch=dist_matrix["RRAP-ECT01-2022-Aspat-STCR-750-B_L3_pe_aln_Amilleporav3","RRAP-ECT01-2022-Aspat-STCR-750_L3_pe_aln_Amilleporav3"]
+
+
+hc_relat=hclust(as.dist(dist_matrix ),method="average") %>% as.dendrogram()
+#Plot
+#Hang dendogram
+dend=as.dendrogram(hc_relat)
+dend_hang=dendextend::hang.dendrogram(dend,hang_height=0.1)
+
+dendro_data=ggdendro::dendro_data(dend_hang)
+
+
+#Adjust labels to hanged dendogram and convert to short labels
+label_data=dendro_data$labels
+segment_data=dendro_data$segments
+leaf_y_positions=segment_data$yend[match(label_data$x,segment_data$xend)]
+label_data$y=leaf_y_positions-0.11
+label_data=label_data %>% merge(names,by.x="label",by.y="sample")
+
+#Adjust two labels positions that have issues 
+label_data$y[label_data$label=="RRAP-1635_pe_aln_Amilleporav3"]=0.480
+label_data$y[label_data$label=="RRAP-499_pe_aln_Amilleporav3"]=0.437
+
+#Color labels according to type of replicates
+label_data$Type[label_data$label %in% reseq_samples_diffbatch]="within_rep"
+label_data$Type[label_data$label %in% reseq_samples_samebatch]="same_rep"
+label_data$Type[is.na(label_data$Type)]="norep"
+
+dendro_plot=ggplot() + geom_segment(data=dendro_data$segments,aes(x=x,y=y,xend=xend,yend=yend))+ geom_text(data=label_data,aes(x=x,y=y,label=Colony,color=Type),hjust=1,angle=90,size=5) + geom_point(data=label_data,aes(x=x,y=y+0.012,color=Type),size=3) + theme_minimal() + theme(axis.text.y=element_text(size=25,color="black"),axis.title.y=element_text(size=25,color="black"),axis.title.x=element_blank(),axis.text.x=element_blank(),axis.ticks.x=element_blank(),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),plot.background = element_rect(fill="white",color="transparent"),legend.position = "none") + labs(y="1-Relatedness") + ylim(c(0.25,1.05))
+
+ggsave(dendro_plot,filename=paste0(figpath,"Relatedness_aspat_clean_all_chr_SNP_filtered_2_20mis_reseqindividuals_100random.png"),width=18,height=12,dpi=320)
+
+```
+
+#Compare individual heterosigosity estimates between batches
+```{r}
+#Get observed heterosigosity results
+het=read.table(paste0(path,"Stats/aspat_clean_all_chr_SNP_filtered2_reseq_indiv_0mis.het"),header=T)
+
+#Get number of invariant sites for each sample
+unvariant_counts=read.table(paste0(path,"Stats/aspat_clean_all_chr_reseq_indiv_0mis_unvariant_sites_counts.txt"),header=F,col.names=c("sample","N"))
+
+#Compute individual observed heterosigosity 
+het=het %>% merge(unvariant_counts,by.x="INDV",by.y="sample")
+het=het %>% mutate(H_obs=1-((O.HOM.+N)/(N_SITES+N)),H_exp=1-((E.HOM.+N)/(N_SITES+N)))
+
+#Assign Batch information to each individual
+het=het %>% mutate(Batch=if_else(grepl("ECT01",INDV),"GBR_batch","NC_batch"))  %>% mutate(Colony=sub("_.*","",sub(".*-","",sub("-B","",sub(".*Aspat-","",sub("_L.*","",INDV)))))) 
+
+#Plot the result
+ttest=t.test(H_obs~Batch,data=het)
+stat=ttest$statistic
+
+max_het=0.125
+
+het_plot= het %>% ggplot(aes(x=Batch,y=H_obs,colour=Batch))+ geom_boxplot(aes(color=Batch)) + geom_violin(trim=F,aes(color=Batch),fill="transparent") + geom_point(size=5,alpha=0.5) + geom_line(colour="grey",aes(group=Colony))+ stat_summary(fun.y=median,geom="point",size=12,aes(color=Batch,fill=Batch)) + theme_classic() + theme(axis.text.x = element_text(size=30,colour="black"),axis.text.y = element_text(size=30,colour="black"),axis.title.y = element_text(size=30,margin=margin(r=10)),axis.title.x = element_text(size=30),legend.text=element_text(size=30),legend.title=element_text(size=30),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position=c(.7,.25),legend.text.align = 0,legend.background=element_rect(colour="black")) + guides(fill="none",colour="none") + labs(x="",y="Observed Heterozygosity") + annotate(geom="text",label=paste0(ttest$method,", t=",round(ttest$statistic,3),", df=",round(ttest$parameter,3),", p=",round(ttest$p.value,3)),x=1.5,y=max_het,size=8) + scale_x_discrete(labels=as_labeller(c("GBR_batch"="Batch1","NC_batch"="Batch2")))
+
+ggsave(het_plot,filename=paste0(figpath,"Autosomal_Het_aspat_clean_reseq_indiv_0mis.png"),width=14,height=12,dpi=320)
+```
+
+#Merge the three results together and save final plot 
+```{r}
+combined_plot=ggdraw() + draw_plot(dendro_plot,x=0,y=0.5,width=1,height=0.5) + draw_plot(pca,x=0,y=0,width=0.5,height=0.5) + draw_plot(het_plot,x=0.52,y=0,width=0.48,height=0.48) + draw_plot_label(c("a","b","c"),x=c(0,0,0.49),y=c(1,0.5,0.5),size=35)+ theme(plot.margin = unit(c(1,1,1,1),"cm"),plot.background = element_rect(fill='white',color='transparent')) 
+
+ggsave(combined_plot,filename=paste0(figpath,"Batch_effect_global_plot.png"),width=26,height=18,dpi=320)
+```
+

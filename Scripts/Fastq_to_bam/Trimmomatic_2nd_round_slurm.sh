@@ -57,16 +57,14 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-#### 2.3 Running Fastqc on trimmed files detected rare occurence of sequencing artifacs with sequences containing only A or T
+########################################################## READS TRIMMING 2nd round ###################################################################
+#This scripts serves to remove adapters and trim low quality bases from raw reads 
+
+#1. Running Fastqc on trimmed files detected rare occurence of sequencing artifacs with sequences containing only A or T
+#We Perform trimmomatic again using those sequences as adapter removal 
 #TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 #AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 #GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG
-
-#Check files where poly-A tails were present
-#cd ${OUTDIR}
-#zgrep -A 2 -B 1 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA RRAP-ECT01-2022-Aspat-STCR-731_L4_R1_paired.fastq.gz
-
-#Perform trimmomatic again using those sequences as adapter removal 
 
 #mkdir /data1/WGS_Aspat_GBR/Trimmed_files
 mkdir /nvme/disk0/lecellier_data/WGS_NC_data/Postqfilt_quality_check/QC_2nd_round/
@@ -91,14 +89,14 @@ then
   start=`date +%s`
   echo Array Id : ${SLURM_ARRAY_TASK_ID} File : ${BASE} : start trimming 
   
-  ##Run Trimmomatic 
-  ##Trim log removed as it takes too much storage can be added with -trimlog "${OUTDIR}{}_trim.log"
+  #Run Trimmomatic 
+  #Trim log removed as it takes too much storage can be added with -trimlog "${OUTDIR}{}_trim.log"
   start=`date +%s`
   java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}${BASE}_sum.txt" "${INDIR}${BASE}_R1_paired.fastq.gz" "${INDIR}${BASE}_R2_paired.fastq.gz" "${OUTDIR}${BASE}_R1_paired.fastq.gz" "${OUTDIR}${BASE}_R1_unpaired.fastq.gz" "${OUTDIR}${BASE}_R2_paired.fastq.gz" "${OUTDIR}${BASE}_R2_unpaired.fastq.gz" ILLUMINACLIP:/nvme/disk0/lecellier_data/WGS_NC_data/artifacts.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50
-#  end=`date +%s`
-#  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
+  end=`date +%s`
+  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
   
-  ##Run fastq on trimmed files 
+  #Run fastq on trimmed files 
   fastqc --noextract --outdir "Postqfilt_quality_check/QC_2nd_round/" "${OUTDIR}${BASE}_R1_paired.fastq.gz" --threads 1
   fastqc --noextract --outdir "Postqfilt_quality_check/QC_2nd_round/" "${OUTDIR}${BASE}_R2_paired.fastq.gz" --threads 1
   
@@ -109,33 +107,7 @@ else
 fi
 
 
-##### 3. Run multiqc on all samples (2n trimmed round)
+#2. Run multiqc on all samples (2n trimmed round)
 multiqc "/nvme/disk0/lecellier_data/WGS_NC_data/Postqfilt_quality_check/QC_2nd_round/" -o "/nvme/disk0/lecellier_data/WGS_NC_data/Postqfilt_quality_check/QC_2nd_round/" -f -d
 
 
-
-
-#Previous Trimmomatic versions 
-
-##Run Trimmomatic in parallel mode : assign each file to 1 CPU -> seems to work better than providing files one by one with -threads N argument
-##Trim log removed as it takes too much storage -trimlog "${OUTDIR}{}_trim.log"
-#start=`date +%s`
-#cat /nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/polyA_issue_files.txt | parallel --jobs $NPROCS "java -jar /home/hdenis/Programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 1 -phred33 -summary "${OUTDIR}{}_sum.txt" "${INDIR}{}_R1_paired.fastq.gz" "${INDIR}{}_R2_paired.fastq.gz" "${OUTDIR}{}_R1_paired.fastq.gz" "${OUTDIR}{}_R1_unpaired.fastq.gz" "${OUTDIR}{}_R2_paired.fastq.gz" "${OUTDIR}{}_R2_unpaired.fastq.gz" ILLUMINACLIP:/nvme/disk0/lecellier_data/WGS_GBR_data/Raw_data_processing/artifacts.fa:2:30:10:4:true LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:50"
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-#
-#
-## Keep bases with phred-score quality > 20 in sliding window of 4 bp (average)
-## Remove adapter sequences in user specified file
-## Remove reads with length < 50bp following trimming'''
-#
-##### 3.3 Check quality after 2nd round of filtering and trimming 
-#
-#fastqc --noextract --outdir "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/QC_2nd_round/" $(ls /nvme/disk0/lecellier_data/WGS_GBR_data/Trimmed_files/Trim_2nd_round/*_paired*.gz) --threads 20
-#
-##Generate one general html with multiqc
-#''' Warning : multiqc will crash if some fastqc reports are empty (0 sequences)'''
-#
-#multiqc "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/QC_2nd_round/" -o "/nvme/disk0/lecellier_data/WGS_GBR_data/Postqfilt_quality_check/QC_2nd_round/" -f -d
-#
-##Execute file : sbatch /home/hdenis/Coral-Genomics/Scripts/Trimmomatic_2nd_round_slurm.sh

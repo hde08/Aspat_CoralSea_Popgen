@@ -3,6 +3,11 @@
 #To make the file executable run the command below in terminal 
 '''chmod u+x /home/hugo/PhD/Genomics/Scripts/Quality_check_raw_fasta.sh '''
 
+########################################################## READS QUALITY ASSESSMENT ###################################################################
+#This scripts serves to assess raw sequencing data quality using fastqc and multiqc 
+#Samples were used for whole genome sequencing  on Illumina NovaSeq 600 platform (200 cycles; 150 bp paired end reads; 10X; 70–90% coverage)
+
+
 #Set path of raw sequencing data (fastq files)
 FOLDER_PATH=($(ls -d  /data1/WGS_Aspat_GBR/*/))
 
@@ -20,7 +25,7 @@ for ((i=4; i<l; i++)); do
 	
 done
 
-#Generate one general html with multiqc
+#2. Generate one general html with multiqc
 multiqc Initial_quality_check/ -o Initial_quality_check -f 
 
 #Generate multiple multiqc after running Trimmomatic (for visualization purpose)

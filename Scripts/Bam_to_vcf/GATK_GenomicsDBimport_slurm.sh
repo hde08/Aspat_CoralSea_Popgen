@@ -62,7 +62,8 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-#10.3 Consolidate GVCF using GenomicsDBImport
+########################################################## CREATE GENOMICDB ###################################################################
+#This scripts consolidates GVCF using GenomicsDBImport
 
 cd /nvme/disk0/lecellier_data/WGS_GBR_data/
 INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/"
@@ -73,22 +74,22 @@ REF_3="/nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/Amil_scaffolds_final_
 REF_NAME="Amilleporav3"
 
 
-#10.31 Create map file of following format
+#1. Create map file of following format
 #sample1      sample1.vcf.gz
 #sample2      sample2.vcf.gz
 #sample3      sample3.vcf.gz
 
-#GVCF_FILES=($INDIR*.g.vcf.gz)
-#
-#echo -n > "${INDIR}aspat_gvcf_clean.sample_map"
-#for FILE in ${GVCF_FILES[@]}; do
-#    NAME="$(basename $FILE)"
-#    NAME="${NAME%.g.vcf*}"
-#    printf "%s\t%s\n" "$NAME" "$FILE" >> "${INDIR}aspat_gvcf_clean.sample_map"
-#done
+GVCF_FILES=($INDIR*.g.vcf.gz)
+
+echo -n > "${INDIR}aspat_gvcf_clean.sample_map"
+for FILE in ${GVCF_FILES[@]}; do
+    NAME="$(basename $FILE)"
+    NAME="${NAME%.g.vcf*}"
+    printf "%s\t%s\n" "$NAME" "$FILE" >> "${INDIR}aspat_gvcf_clean.sample_map"
+done
 
 
-#10.32 Read from a list of intervals  (total of 36 intervals)
+#2. Read from a list of intervals  (total of 36 intervals)
 #Chromosomes 1-4 divided in 4 intervals
 #Chromosomes 5-14 divided in 2 inverals 
 INTERVALS_FILE="/nvme/disk0/lecellier_data/WGS_GBR_data/GATK_files/chromosome_intervals.txt"
@@ -101,7 +102,7 @@ readarray -t INTERVALS_NAMES <  $INTERVALS_NAMES_FILE
 CONTIG=${INTERVALS[$((${SLURM_ARRAY_TASK_ID}-1))]}
 CONTIG_NAME=${INTERVALS_NAMES[$((${SLURM_ARRAY_TASK_ID}-1))]}
 
-#10.33 Create GenomicDB gatk v4.5.0.0
+#3. Create GenomicDB gatk v4.5.0.0
 
 start=`date +%s`
 echo Array Id : ${SLURM_ARRAY_TASK_ID} Chromosome : ${CONTIG} : start processing
