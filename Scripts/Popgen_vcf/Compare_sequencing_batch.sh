@@ -107,6 +107,7 @@ for M in ${MISS[@]};
   
   vcftools --gzvcf "${OUTDIR}${BASE}_all_chr_SNP_filtered2_reseq_indiv_${M}mis.vcf.gz"  --maf 0.01 --het --out "${OUTDIR}Stats/${BASE}_all_chr_SNP_filtered2_reseq_indiv_${M}mis"
   
+  
 done
 
 #Then we compute the number of unvariant sites for these individuals and we sum it with the previous denominator to compute autosomal heterozygosity which is more accurate. 
@@ -136,3 +137,5 @@ awk '$2 != "./." {count[$1]++} END {for (s in count) print s "\t" count[s]}' > "
      $1 in a {print $1, a[$1] + $2}' "${OUTDIR2}${BASE}_all_chr_NOVARIATION_reseq_indiv_${M}mis_counts.txt" "${OUTDIR2}${BASE}_all_chr_SNP_filtered2_reseq_indiv_${M}mis_counts.txt" > "${OUTDIR2}${BASE}_all_chr_reseq_indiv_${M}mis_unvariant_sites_counts.txt"
     
 done
+
+###NEED TO ADD HERE LINES TO COMPUTE HETEROSIGOSITY from the het script 
