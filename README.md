@@ -49,16 +49,19 @@ Correspondence : Hugo DENIS, Institut de Recherche pour le Développement, Prome
 
 ### 4. Popgen_vcf
 ### Scripts to conduct final population genetics analyses presented in the manuscript using 'hard called' variants. 
-1 ADMIXTURE_slurm.sh > Perform ADMIXTURE analyses on filtered vcf file  
-2 Stats_pixy_slurm.sh > Compute Fst, Dxy, Pi in PIXY
-3 RAxML_slurm.sh > Compute ML-tree in RAxML  
+1 Compare_sequencing_batch.sh > Confirm absence of strong batch effects  
+2 ADMIXTURE_slurm.sh > Perform ADMIXTURE analyses on filtered vcf file   
+3 Stats_pixy_slurm.sh > Compute Fst, Dxy, Pi in PIXY   
+4 RAxML_slurm.sh > Compute ML-tree in RAxML    
+5 Original scripts to perform dadi analyses can be found at https://github.com/kepra3/kp_dadi/tree/ahya-demo
 
 ### 5. Symbionts  
 ### Scripts to analyze symbiont communities composition and diversity from hologenome reads. 
 ### Based on original scripts from Hisatake Ishida available at : https://github.com/hisatakeishida/Symb-SHIN
-1 Kmer_symbionts.sh > Generate k-mer counts per sample and compute D2S pairwise distance    
-2 GraftM_ITS2_slurm.sh > Recover ITS2 reads in hologenome data using sequence classifier tool GraftM    
-3 psbAncr.sh > Map symbiont reads to psbAncr reference database and use uniquely mapped reads as relative abundance    
+1 Preprocess_reads.sh > Separate Symbiodiniaceae reads from host reads  
+2 Kmer_symbionts.sh > Generate k-mer counts per sample and compute D2S pairwise distance    
+3 GraftM_ITS2_slurm.sh > Recover ITS2 reads in hologenome data using sequence classifier tool GraftM    
+4 psbAncr.sh > Map symbiont reads to psbAncr reference database and use uniquely mapped reads as relative abundance     
 
 
 ### 6. Stats_Plots
