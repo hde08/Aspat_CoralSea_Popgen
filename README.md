@@ -61,5 +61,5 @@ Correspondence : Hugo DENIS, Institut de Recherche pour le Développement, Prome
 3 psbAncr.sh > Map symbiont reads to psbAncr reference database and use uniquely mapped reads as relative abundance    
 
 
-###5. Stats & Plots
+### 6. Stats & Plots
 ### Scripts to conduct statistical analyses and create main plots from the publication

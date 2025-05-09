@@ -64,15 +64,13 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
+########################################################## POPGEN ANGSD ###################################################################
+#Perform PCA and ADMIXTURE analyses using genotype likelihoods (beagle file)
 
-#### 9. Perform PCA on ANGSD output (beagle file) 
-#mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/
-
+#1. GBR samples only 
 cd /nvme/disk0/lecellier_data/WGS_GBR_data/
 INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/ANGSD_files/"
 OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/"
-
-#python /home/hdenis/Programs/pcangsd/pcangsd/pcangsd.py -h
 
 #Associate slurm array index with K value 
 K=${SLURM_ARRAY_TASK_ID}
@@ -80,36 +78,8 @@ K=${SLURM_ARRAY_TASK_ID}
 #Parameters 
 #--maf 0.05 (minimum minor allele frequency)
 
-### 9.1 Perform PCA and ADMIXTURE on all GBR samples (including Ahya and Amil outgroups) to assess possible misID 
-#Remove some Amil samples that were uncorrectly identified 
-
-
-#if (( $K == 1 )); then
-#  #Compute covariance matrix 
-#  start=`date +%s`
-#  echo Start computing covariance matrix 
-#  
-##  pcangsd --beagle "${INDIR}GBR_allsamples_filt_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_allsamples_filt_uniq_all_chr" --maf 0.05 --threads 4 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_ahya_subset.filelist.txt"
-#  
-#  end=`date +%s`
-#  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
-#  
-#  else
-#  #Perform Bayesian hiearchical clustering admixture analyses
-#    start=`date +%s`
-#    echo Start computing admixture K=$K
-#    
-#    pcangsd --beagle "${INDIR}GBR_allsamples_filt_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_allsamples_filt_uniq_all_chr_K${K}" --maf 0.05 --admix --admix_K $K --threads 4 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_ahya_subset.filelist.txt"
-#    
-#    end=`date +%s`
-#    echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
-#  fi
-
-
-
-
-### 9.2 Re-run PCA and ADMIXTURE on Aspat samples only after removal of 4 mis-identifications and 49 putative clones (IBS method)
-#Allows 05% missing data 
+## 1.1 Perform PCA and ADMIXTURE on all GBR samples (including Ahya and Amil outgroups) to assess possible misID 
+Remove some Amil samples that were uncorrectly identified 
 
 
 if (( $K == 1 )); then
@@ -117,7 +87,29 @@ if (( $K == 1 )); then
   start=`date +%s`
   echo Start computing covariance matrix 
   
-pcangsd --beagle "${INDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr_noclones" --maf 0.05 --threads 4 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_noclones.filelist.txt"
+  pcangsd --beagle "${INDIR}GBR_allsamples_filt_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_allsamples_filt_uniq_all_chr" --maf 0.05 --threads 4 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_ahya_subset.filelist.txt"
+  
+  end=`date +%s`
+  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+  
+  else
+  #Perform Bayesian hiearchical clustering admixture analyses
+    start=`date +%s`
+    echo Start computing admixture K=$K
+    
+    pcangsd --beagle "${INDIR}GBR_allsamples_filt_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_allsamples_filt_uniq_all_chr_K${K}" --maf 0.05 --admix --admix_K $K --threads 4 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_ahya_subset.filelist.txt"
+    
+    end=`date +%s`
+    echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+  fi
+
+#1.2 Re-run PCA and ADMIXTURE on Aspat samples only after removal of 4 mis-identifications and 49 putative clones (based on IBS)
+if (( $K == 1 )); then
+  #Compute covariance matrix 
+  start=`date +%s`
+  echo Start computing covariance matrix 
+  
+  pcangsd --beagle "${INDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr_noclones" --maf 0.05 --threads 4 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_noclones.filelist.txt"
   
   end=`date +%s`
   echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
@@ -133,43 +125,90 @@ pcangsd --beagle "${INDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr.beagle.gz" --
     echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
   fi
 
-##Same on no missing data 
-#start=`date +%s`
-#pcangsd --beagle "${INDIR}GBR_aspatsamples_filt_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_aspatsamples_filt_uniq_all_chr_noclones" --maf 0.05 --threads 10 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_noclones.filelist.txt"
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+#2. NC samples only 
+cd /nvme/disk0/lecellier_data/WGS_NC_data/
+INDIR="/nvme/disk0/lecellier_data/WGS_NC_data/ANGSD_files/"
+OUTDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Analyses_outputs/"
+
+#Associate slurm array index with K value 
+K=${SLURM_ARRAY_TASK_ID}
+
+#Parameters 
+#--maf 0.05 (minimum minor allele frequency)
+
+### 9.1 Perform PCA and ADMIXTURE on all NC samples
+if (( $K == 1 )); then
+  #Compute covariance matrix 
+  start=`date +%s`
+  echo Start computing covariance matrix 
+  
+  pcangsd --beagle "${INDIR}NC_allsamples_filt_05mis_uniq_all_chr.beagle.gz" --out "${OUTDIR}NC_allsamples_filt_05mis_uniq_all_chr" --maf 0.05 --threads 4 
+  
+#  --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_ahya_subset.filelist.txt"
+  
+  end=`date +%s`
+  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+  
+  else
+  #Perform Bayesian hiearchical clustering admixture analyses
+    start=`date +%s`
+    echo Start computing admixture K=$K
+    
+    pcangsd --beagle "${INDIR}NC_allsamples_filt_05mis_uniq_all_chr.beagle.gz" --out "${OUTDIR}NC_allsamples_filt_05mis_uniq_all_chr_K${K}" --maf 0.05 --admix --admix_K $K --threads 4 
+    
+#    --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_ahya_subset.filelist.txt"
+    
+    end=`date +%s`
+    echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+  fi
 
 
+#3. GBR+NC samples 
+INDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Aligned_files/"
+OUTDIR="/nvme/disk0/lecellier_data/WGS_NC_data/ANGSD_files/"
+
+#3.1 PCA and ADMIXTURE on NC + Aspat/Amil GBR samples 
+if (( $K == 1 )); then
+  #Compute covariance matrix 
+  start=`date +%s`
+  echo Start computing covariance matrix 
+  
+  pcangsd --beagle "${INDIR}GBR_NC_aspat_amil_samples_05mis_all_chr.beagle.gz" --out "${OUTDIR}GBR_NC_aspat_amil_samples_05mis_all_chr" --maf 0.05 --threads 4 
+  end=`date +%s`
+  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+  
+  else
+  #Perform Bayesian hiearchical clustering admixture analyses
+    start=`date +%s`
+    echo Start computing admixture K=$K
+    
+    pcangsd --beagle "${INDIR}GBR_NC_aspat_amil_samples_05mis_all_chr.beagle.gz" --out "${OUTDIR}GBR_NC_aspat_amil_samples_05mis_all_chr_K${K}" --maf 0.05 --admix --admix_K $K --threads 4  
+    end=`date +%s`
+    echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+  fi
+  
+  
+#3.2 PCA and ADMIXTURE on NC + GBR samples excluding Amil outgroup
+if (( $K == 1 )); then
+#Compute covariance matrix 
+start=`date +%s`
+echo Start computing covariance matrix 
+
+pcangsd --beagle "${INDIR}GBR_NC_aspat_amil_samples_05mis_all_chr.beagle.gz" --out "${OUTDIR}GBR_NC_aspat_samples_05mis_all_chr" --maf 0.05 --threads 4 --filter "${INDIR}GBR_NC_aspat_samples.filterlist.txt"
 
 
+end=`date +%s`
+echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
 
-##Run after removal of Heron outliers 
-##Compute covariance matrix 
-#start=`date +%s`
-#pcangsd --beagle "${INDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr_nooutlier" --maf 0.05 --threads 10 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_outlier.filelist.txt"
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
-
-##Run after removal of putative clones 
-##Compute covariance matrix 
-#start=`date +%s`
-#pcangsd --beagle "${INDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_aspatsamples_filt_05mis_uniq_all_chr_noclones" --maf 0.05 --threads 10 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_bam_noclones.filelist.txt"
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
-
-
-
-##Perform Bayesian hiearchical clustering admixture analyses
-##To confirm assignation of samples between A.millepora and A.spathulata 
-##On a subset of the spat dataset to avoid uneven sampling bias 
-#K=3
-#start=`date +%s`
-#pcangsd --beagle "${INDIR}GBR_allsamples_filt_uniq_all_chr.beagle.gz" --out "${OUTDIR}GBR_amil_aspat_admix_K${K}" --maf 0.05 --admix --admix_K ${K} --threads 4 --filter "/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/aspat_amil_subset.filelist.txt"
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
-#
-##To run this script 
-##sbatch /home/hdenis/Coral-Genomics/Analyses_Scripts/PCAngsd_slurm.sh 
-
-
+else
+#Perform Bayesian hiearchical clustering admixture analyses
+  start=`date +%s`
+  echo Start computing admixture K=$K
+  
+  pcangsd --beagle "${INDIR}GBR_NC_aspat_amil_samples_05mis_all_chr.beagle.gz" --out "${OUTDIR}GBR_NC_aspat_samples_05mis_all_chr_K${K}" --maf 0.05 --admix --admix_K $K --threads 4 --filter "${INDIR}GBR_NC_aspat_samples.filterlist.txt"
+ 
+  end=`date +%s`
+  echo Execution time was `expr $(( ($end - $start) / 60))` minutes.; 
+fi
+  
 

@@ -64,17 +64,25 @@ cd $PBS_O_WORKDIR
 
 ulimit -s unlimited
 
-####8.4 Identify clones (Identity by state IBS)
+########################################################## SAMPLES IBS ###################################################################
+#Identify clones and related individuals using IBS method in ANGSD (Identity by state)
+#The analysis is done separately for each genomic cluster identified based on PCA and Admixture results
 
+#GBR
 cd /nvme/disk0/lecellier_data/WGS_GBR_data/
 INDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/Aligned_files/"
 OUTDIR="/nvme/disk0/lecellier_data/WGS_GBR_data/ANGSD_files/"
 
-#mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/IBS_results/
+#NC
+cd /nvme/disk0/lecellier_data/WGS_NC_data/
+INDIR="/nvme/disk0/lecellier_data/WGS_NC_data/Aligned_files/"
+OUTDIR="/nvme/disk0/lecellier_data/WGS_NC_data/ANGSD_files/"
 
 #A.millepora v3 reference genome 
 REF_3="/nvme/disk0/lecellier_data/WGS_GBR_data/Ref_genomes/Amil_scaffolds_final_v3.fa"
 REF_NAME="Amilleporav3"
+
+mkdir /nvme/disk0/lecellier_data/WGS_GBR_data/Analyses_outputs/IBS_results/
 
 #Match slurm array index with group number 
 FILE="${INDIR}aspat_bam_group${SLURM_ARRAY_TASK_ID}.filelist.txt"
@@ -83,41 +91,7 @@ FILE="${INDIR}aspat_bam_group${SLURM_ARRAY_TASK_ID}.filelist.txt"
 N_FILES=$(wc -l < $FILE)
 MIN_N=$((95*N_FILES/100))
 
-#8.41 Create genotype likelihood file (with all of 10 genotypes likelihood ) -> required by IBS
-#Try first without specifying reference genome 
-#start=`date +%s`
-#echo Start inferring GL
-#angsd  -out "${OUTDIR}GBR_aspat_group${SLURM_ARRAY_TASK_ID}_all_chr" -uniqueOnly 1 -minMapQ 30 -minQ 30 -minInd MIN_N -setMinDepthInd 3 -GL 1 -doGlf 1 -nThreads 15
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
- 
-##Version for separate GL estimate for each chromosome 
-##Associate slurm array index with contig (chr) name 
-#CHROMOSOME_FILE="/nvme/disk0/lecellier_data/WGS_GBR_data/ANGSD_files/chromosomes_header.txt"
-#CONTIG=`sed -n ${SLURM_ARRAY_TASK_ID}p $CHROMOSOME_FILE`
-#
-#start=`date +%s`
-#angsd -bam $INDIR/bam.filelist.focal_cluster.txt -out "${OUTDIR}focal_cluster_${CONTIG}" -ref $REF_3 -r $CONTIG: -uniqueOnly 0 -minMapQ 30 -minQ 30 -minInd MIN_N -setMinDepthInd 3 -GL 1 -doGlf 1 -nThreads 5
-#end=`date +%s`
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-
-#8.42 Run IBS analysis 
-
-#FILTERS="-minMapQ 30 -minQ 30 -minInd MIN_N -setMinDepthInd 3 -uniqueOnly 1 -remove_bads 1 -doSNPstat -SNP_pval 1e-6 -minMaf 0.05 -only_proper_pairs 1"
-#
-#TODO="-doIBS 1 -makeMatrix 1 -GL 1 -doMaf 2 -doMajorMinor 1 -doCounts 1"
-
-#start=`date +%s`
-#echo Start computing IBS 
-#angsd -bam $FILE  -out "Analyses_outputs/IBS_results/GBR_aspat_group${SLURM_ARRAY_TASK_ID}_ibs05" -nThreads 15 $FILTERS $TODO
-#echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
-
-#8.43 Run IBS analysis on Heron outliers separately 
-
-FILE="${INDIR}aspat_bam_heron_outlier.filelist.txt"
-
-N_FILES=$(wc -l < $FILE)
-MIN_N=$((95*N_FILES/100))
+#1. Run IBS analysis on each cluster (angsd) separately
 
 FILTERS="-minMapQ 30 -minQ 30 -minInd MIN_N -setMinDepthInd 3 -uniqueOnly 1 -remove_bads 1 -doSNPstat -SNP_pval 1e-6 -minMaf 0.05 -only_proper_pairs 1"
 
@@ -125,7 +99,9 @@ TODO="-doIBS 1 -makeMatrix 1 -GL 1 -doMaf 2 -doMajorMinor 1 -doCounts 1"
 
 start=`date +%s`
 echo Start computing IBS 
-angsd -bam $FILE  -out "Analyses_outputs/IBS_results/GBR_aspat_heron_outlier_group_ibs05" -nThreads 15 $FILTERS $TODO
+angsd -bam $FILE  -out "Analyses_outputs/IBS_results/NC_aspat_group${SLURM_ARRAY_TASK_ID}_ibs05" -nThreads 5 $FILTERS $TODO
+angsd -bam $FILE  -out "Analyses_outputs/IBS_results/GBR_aspat_group${SLURM_ARRAY_TASK_ID}_ibs05" -nThreads 15 $FILTERS $TODO
+echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 echo Execution time was `expr $(( ($end - $start) / 60))` minutes.
 
 
