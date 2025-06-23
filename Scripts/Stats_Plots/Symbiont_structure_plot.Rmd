@@ -1,0 +1,203 @@
+---
+title: "Symbiont_structure_plot"
+author: "Hugo DENIS"
+date: "2025-06-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Script to plot the results of symbiont communities variation based on genome wide differentiation (kmer) and ITS2
+#Figure 4
+
+#Load packages
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(cowplot)
+library(ggspatial)
+library(scatterpie)
+library(ggnewscale)
+library(ggOceanMaps)
+library(vegan)
+```
+
+#Load geographic data
+```{r}
+path="C:/Users/Hugo/Documents/Data/Symbiont_structure_data/"
+figpath="C:/Users/Hugo/Documents/Figures/Genomics/Manuscripts_figures/"
+
+#Load sampling site coordinates
+site_coordinates=xlsx::read.xlsx(paste0(path,"Sampling_site_coordinates.xlsx"),sheetName = "Feuil1",check.names=F,rowIndex=1:30,colIndex = 1:7,colClasses = c(rep("character",2),rep("numeric",5)))
+
+#Load Millenium project coral reef shapefiles
+unep_reef_uncrop<-sf::st_read(paste0(path,"/14_001_WCMC008_CoralReefs2018_v4_1/01_Data/WCMC008_CoralReef2018_Py_v4_1.shp"))
+
+#Load Western Pacific countries border 
+australia_border<-raster::getData("GADM",country="AUS",level=0)
+ncl_border<-raster::getData("GADM",country="NCL",level=0)
+van_border<-geodata::gadm(country="VUT",level=0,path=path)
+van_border=sf::st_as_sf(van_border)
+
+#Load World countries border
+world=rnaturalearth::ne_countries(returnclass = "sf")["geometry"]
+```
+
+#Load metadata & environmental data
+```{r}
+meta_colony=read.table(paste0(path,"Colony_metadata_Aspat_GBR_NC.txt"),header=T,sep="\t")
+```
+
+#Load symbiont genomic data 
+```{r}
+#Load symbiont ITS2 annotation
+cluster_df=read.table(paste0(path,"D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
+
+#Load result of dbRDA
+dbRDA=readRDS(paste0(path,"Symbiont_full_dbRDA.rds"))
+```
+
+
+#Plot Symbionts populations on MAP 
+#Make map with distribution of symbionts clusters as per the host 
+```{r}
+world_map=ggplotGrob(ggplot(data = world) +
+    geom_sf(fill="white",colour="black")+
+  geom_rect(aes(xmin = 2564417, xmax = 5174417, ymin = 1564417, ymax = 3064417), color = "#092347", fill = NA,size=1) +
+    coord_sf(crs = "+proj=laea +lat_0=-10 +lon_0=160 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs") +theme_void())
+
+site_map=basemap(limits = c(144,169, -26,-13),
+        bathymetry = TRUE,land.col=NA,land.border.col=NA,
+        glaciers = FALSE,legend.position="bottom",bathy.style = "rcb",bathy.alpha=0.5)  + geom_polygon(data=ncl_border, aes(long,lat,group=group),fill="grey",colour="grey40",size=0.3) + geom_polygon(data=australia_border, aes(long,lat,group=group),fill="grey",colour="grey40",size=0.3)+ geom_sf(data=van_border ,fill="grey",colour="grey40",size=0.3)+ geom_sf(data = unep_reef_uncrop['LAYER_NAME'],fill="grey",color="grey40",xlim=c(144,167),ylim=c(-25,-12),size=0.3)+ theme(legend.title = element_text(size=17,color="black",margin=margin(t = 0, r = 7, b = 35, l = 0)),legend.text = element_text(size=17,color="black"),legend.background = element_rect(fill = "transparent",colour = "transparent"),legend.key.height = unit(4,"mm"),legend.key.width = unit(20,"mm"),legend.position = "none",legend.margin=margin(0,0,0,0),
+        legend.box.margin=margin(-10,0,0,0),axis.text.x = element_text(size=30,color="#092347",vjust = -0.7,hjust=-0.2,
+                                 margin = margin( t = -45)),axis.text.y=element_text(size=30,color="#092347",hjust = -0.9,vjust=-0.3,margin=margin(l=0,r=-80,b=0,t=0)),plot.background= element_rect(fill="white", colour="white"),panel.background = element_rect(fill="transparent", colour="#092347",linewidth=1.1),axis.ticks =element_blank())+ labs(x="",y="")+
+  scale_y_continuous(labels = ~ paste0(.x, "\u00B0"))+
+  scale_x_continuous(labels = ~ paste0(.x, "\u00B0"))+
+  ggspatial::annotation_scale(
+    location = "tr",
+    bar_cols = c("#092347", "white"),
+    text_family = "ArcherPro Book",line_width = 1.5,text_cex=4,pad_y = unit(0.4, "in")
+  ) + ggspatial::annotation_north_arrow(location = "tr", which_north = "true", pad_x = unit(0.4, "in"), pad_y = unit(0.8, "in"),height=unit(4,"cm"),width=unit(4,"cm"), style = north_arrow_fancy_orienteering(fill = c("#092347", "white"),text_size=50)) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")+ geom_point(data=site_coordinates,aes(x=Lon,y=Lat),size=5,shape=21, color="#092347",fill="#092347") + guides(fill="none",color="none")
+
+#Remove samples that could not be assigned an ITS2 type
+cluster_df=cluster_df %>% subset(!is.na(Cluster))
+
+#Combine with metadata and compute average per site 
+cluster_df$Lon=as.numeric(cluster_df$Lon)
+cluster_df$Lat=as.numeric(cluster_df$Lat)
+cluster_df_site=cluster_df %>% group_by(locationID) %>% mutate(Lon=mean(Lon,na.rm=T),Lat=mean(Lat,na.rm=T)) %>% ungroup() %>%  group_by(locationID,ITS2) %>% dplyr::summarize(Occurence=n(),Lat=mean(Lat,na.rm=T),Lon=mean(Lon,na.rm=T)) %>% pivot_wider(names_from = "ITS2",values_from = "Occurence", values_fill = list(Occurence = 0))
+
+#Add sites coordinates and adjusted positions to plot the pies on the map
+cluster_df_site=cbind(cluster_df_site,data.frame(x.adj=c(-1,1,1,-1,1,2,1,-0.5,1,2,1,-1.5,-1,-1,-1,1.5,2,-1,-0.6,1,2,1,-1,1,2,1,1,-1,1),y.adj=c(-0.2,-0.5,1,1,0.5,-0.5,-1,0,0,0.5,1,-1,0,0.5,0,0.5,-1,-0.4,-0.2,0,0.5,-0.3,0,0.5,1,0.5,0,-0.5,0)))
+cluster_df_site=cluster_df_site %>% mutate(Lon.adj=Lon+x.adj,Lat.adj=Lat+y.adj)
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+#Normalize values for the pie plot 
+cluster_df_site$Tot=rowSums(cluster_df_site[,4:7])
+cluster_df_site[,4:7]=cluster_df_site[,4:7]/cluster_df_site$Tot
+
+#Add the pie chart on the top of the plot 
+site_map_pie=site_map + geom_segment(data=cluster_df_site,aes(x=Lon,xend=Lon.adj,y=Lat,yend=Lat.adj),size=0.7,colour="#092347") + new_scale_fill()  + geom_scatterpie(data=cluster_df_site,aes(x=Lon.adj,y=Lat.adj),cols=c("C3k/C3bo","C50c","C3k","C50b"),pie_scale = 0.9,colour=NA) + scale_fill_manual(values=cluster_colors) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs") + theme(legend.key.height = unit(10,"mm"),legend.key.width = unit(10,"mm"),legend.position = "none") + labs(fill="ITS2 type")
+
+full_site_map<-site_map_pie+ annotation_custom(grob=world_map,xmin=145,xmax=149.5,ymin=-Inf,ymax=-20)
+```
+
+#Plot RDA results
+```{r}
+#Scaling 1
+site_scores_scaling1 <- as.data.frame(vegan::scores(dbRDA, display = "sites", scaling = 1,choices=c(1,2,3,4,5)))
+species_scores_scaling1 <- as.data.frame(vegan::scores(dbRDA, display = "species", scaling = 1,choices=c(1,2,3,4,5)))
+env_scores_scaling1 <- as.data.frame(vegan::scores(dbRDA, display = "bp", scaling = 1,choices=c(1,2,3,4,5)))
+
+# Add labels for sites, species, and environmental variables
+site_scores_scaling1$Site <- rownames(site_scores_scaling1)
+species_scores_scaling1$Species <- rownames(species_scores_scaling1)
+env_scores_scaling1$Variable <- rownames(env_scores_scaling1)
+
+#Edit variable names 
+variable_labeller=c("PC1"="Host PC1","PC2"="Host PC2","PC3"="Host PC3","Kd490_median"="Turbidity Median","CF_median"="Cloud Fraction\nMedian","DHW_collection"="DHW\ncollection","SST_AR_1km"="SST AR","SSTmean_change"="SST change","DHW_freq_sup4_5km"="DHW>4 Freq","DHW_max_5km"="DHW max","Km_to_coastline"="Shore\ndistance","MMM_5km"="MMM","DHW_freq_sup8"="DHW>8 Freq")
+
+#Add percentage of variation explain by each axis
+eigenvalues <- dbRDA$CCA$eig
+# Calculate the percentage of variance explained by each axis
+variance_explained <- eigenvalues / sum(eigenvalues) * 100
+
+#Add cluster information
+site_scores_scaling1=site_scores_scaling1 %>% merge(cluster_df %>% dplyr::select(wgsID_short,ITS2),by.x="Site",by.y="wgsID_short") %>% merge(meta_colony %>% dplyr::select(wgsID_short,Geographic_cluster),by.x="Site",by.y="wgsID_short") %>% subset(!is.na(ITS2))
+
+#Retain only environmental variables that were found significant through forward selection
+env_scores_scaling1=env_scores_scaling1 %>% subset(Variable %in% c("MMM_5km","DHW_freq_sup4_5km","SST_AR_1km"))
+
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+
+#Adjust size of predictor length
+dbRDA_plot=function(var,axis1,axis2,coef,v1,v2,h1,h2){
+  Coef=coef
+text_size=30
+
+dbRDA1_percent <- round(variance_explained[axis1], 1)
+dbRDA2_percent <- round(variance_explained[axis2], 1)
+
+env_scores_scaling1$CAP1scaled=Coef*env_scores_scaling1$CAP1
+env_scores_scaling1$CAP2scaled=Coef*env_scores_scaling1$CAP2
+env_scores_scaling1$CAP3scaled=Coef*env_scores_scaling1$CAP3
+
+
+#Adjust position of eigenvectors labels 
+env_scores_scaling1$vjust[env_scores_scaling1[,paste0("CAP",axis2)]>0]=v1
+env_scores_scaling1$vjust[env_scores_scaling1[,paste0("CAP",axis2)]<0]=v2
+env_scores_scaling1$hjust[env_scores_scaling1[,paste0("CAP",axis1)]>0]=h1
+env_scores_scaling1$hjust[env_scores_scaling1[,paste0("CAP",axis1)]<0]=h2
+
+if(axis1==3){
+  env_scores_scaling1$hjust[env_scores_scaling1$Variable=="SST_AR_1km"]=0.9
+  env_scores_scaling1$vjust[env_scores_scaling1$Variable=="MMM_5km"]=1.2
+}
+
+#Change variable names 
+env_scores_scaling1$LabelledVariable <- variable_labeller[env_scores_scaling1$Variable]
+
+# Plot for Scaling 1 (Distance Scaling)
+plot_scaling1 <- ggplot() +
+  # Plot site scores
+  geom_point(data = site_scores_scaling1, aes_string(x = paste0("CAP",axis1), y = paste0("CAP",axis2),color=var,shape="Geographic_cluster"), size = 5,alpha=0.8)  +
+  # Plot environmental vectors
+  geom_segment(data = env_scores_scaling1, aes_string(x = 0, y = 0, xend = paste0("CAP",axis1,"scaled"), yend = paste0("CAP",axis2,"scaled")), 
+               arrow = arrow(length = unit(0.6, "cm")), color = "black", size = 1,alpha=0.8) +
+  geom_label(data = env_scores_scaling1, aes_string(x = paste0("CAP",axis1,"scaled"), y = paste0("CAP",axis2,"scaled"), label = "LabelledVariable",vjust="vjust",hjust="hjust",segment.colour=NA), 
+            color = "black",size=text_size/3) +
+  
+  # Labels and theme
+  labs(x = paste0("dbRDA",axis1," (",dbRDA1_percent,"%)"), y = paste0("dbRDA",axis2," (",dbRDA2_percent,"%)"), title = "") + theme_classic()+ theme(axis.text.x=element_text(size=text_size,color="black",angle=0,hjust=0.95),axis.text.y=element_text(size=text_size,color="black"),axis.title.x = element_text(size=text_size,color="black"),axis.title.y = element_text(size=text_size,color="black",margin = margin(t = 0, r = 7, b = 0, l = 0)),legend.title = element_text(size=text_size-2,color="black",margin = margin(t = 0, r = 20, b = , l = 0)),legend.text = element_text(size=text_size-5,color="black"),legend.position ="bottom",legend.background = element_rect(fill = "transparent"),panel.background = element_rect(colour = "black", size=1.5),legend.key = element_blank(),axis.ticks.length = unit(0.3, "cm"),axis.ticks = element_line(size = 1))
+
+return(plot_scaling1)
+  
+}
+
+#Plot RDA1 & RDA2
+dbRDA_plot_RDA12=dbRDA_plot("ITS2",1,2,3,-0.2,1.2,0.4,0.3)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")+ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("CB"="CB","South GBR"="S GBR","Central/North GBR"="CN GBR","NC"="NC")))  + guides(colour = F,shape=F)
+
+dbRDA_plot_RDA23=dbRDA_plot("ITS2",2,3,3,-0.2,1.2,0.5,0.5)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")  +ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("CB"="CB","South GBR"="S GBR","Central/North GBR"="CN GBR","NC"="NC"))) + guides(colour = F,shape=F)
+
+dummy_plot=dbRDA_plot("ITS2",2,3,4.5,-0.2,1.2,0.5,0.5)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")  +ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("CB"="CB","South GBR"="S GBR","Central/North GBR"="CN GBR","NC"="NC")))  + theme(legend.key.width =unit(3,"cm"),legend.text=element_text(size=28,color="black",margin = margin(l = -20, unit = "pt")),legend.title=element_text(size=30,color="black",margin = margin(l = 30, unit = "pt")),legend.spacing.x = unit(0, "mm")) +
+  guides(shape = guide_legend(override.aes = list(size = 15)),color = guide_legend(override.aes = list(size = 15)))
+legend <-ggpubr::get_legend(dummy_plot)
+
+```
+
+
+#Combine plot together and save 
+```{r}
+map_dbRDA_combine_plot=cowplot::ggdraw() +draw_plot(full_site_map,x=0.025,y=0.45,width=1,height=0.55) +draw_plot(dbRDA_plot_RDA12,x=0.02,y=0.05,width=0.46,height=0.4) +draw_plot(dbRDA_plot_RDA23,x=0.505,y=0.05,width=0.46,height=0.4) + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b"),x=c(0.03,0.03),y=c(1,0.45),size=50) + draw_plot(legend,x=0,y=0,width=1,height=0.05)
+
+ggsave(map_dbRDA_combine_plot ,filename=paste0("C:/Users/Hugo/Documents/Figures/Genomics/Manuscripts_figures/","Figure_4_withoutlabels.png"),width=22.5,height=20,dpi=300)
+```
+

@@ -1,0 +1,95 @@
+---
+title: "Host_symbiont_tanglegram"
+author: "Hugo DENIS"
+date: "2025-06-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Script to make a tanglegram between host and symbiont clustering 
+#Figure 3
+
+#Load packages
+```{r}
+library(dplyr)
+library(dendextend)
+library(DECIPHER)
+library(ape)
+```
+
+#Load data
+```{r}
+path="C:/Users/Hugo/Documents/Data/Host_symbiont_clustering/"
+figpath="C:/Users/Hugo/Documents/Figures/Genomics/"
+
+#Load metadata
+meta_colony=read.table(paste0(path,"Colony_metadata_Aspat_GBR_NC.txt"),header=T,sep="\t")
+
+#Read hiearchical clustering of symbionts based on kmer D2S distance 
+hc2_pv=readRDS(paste0(path,"pvclust_RAxML_subset.rds"))
+hc2_dendro <- as.dendrogram(hc2_pv$hclust)
+
+#Read symbionts ITS2 annotation
+symb_clusters=read.table(paste0(path,"D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
+
+
+#Load RAxML tree of host lineages
+rerooted_bootstrap_file<-paste0(path, "RAxML_bipartitions.aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70_final_tree_GAMMA_rerooted_pruned.nwk")
+rerooted_bootstrap_tree=DECIPHER::ReadDendrogram(file=rerooted_bootstrap_file) 
+
+pop=read.table(paste0(path,"aspat_clean_filtered2_Group1234_noclones.filelist.txt"),col.names=c("sample","Group"))
+pop$sample=sub(".*Aspat-","",pop$sample)
+pop$sample=sub("_.*","",pop$sample)
+
+#Prune both tree for visualization 
+prune_host=(read.table(paste0(path, "prune_samples_host.txt")))$V1
+prune_symbiont=(read.table(paste0(path, "prune_samples_symbiont.txt")))$V1
+rerooted_bootstrap_tree=prune(rerooted_bootstrap_tree,prune_host)
+hc2_dendro_pruned <- prune(hc2_dendro, prune_symbiont)
+```
+
+#Plot figure & save
+```{r}
+group_colors=c("#016765","#079CEF","#FFCC33","#CC791E")
+names(group_colors)=c("Group3","Group4","Group2","Group1")
+
+
+dend1 <- rerooted_bootstrap_tree %>%
+  set("labels_cex", 2) %>%  # Set label size
+  color_branches(col = group_colors[unlist(lapply(labels(rerooted_bootstrap_tree), 
+                                                      function(x) { pop[pop$sample == x, "Group"] }))]) %>%  
+  hang.dendrogram(hang = -1)
+
+
+cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+dend2<- hc2_dendro_pruned %>%
+  dendextend::set("labels_cex",2)%>%color_branches(col = cluster_colors[unlist(lapply(labels(hc2_dendro_pruned), 
+                                                      function(x) { symb_clusters[symb_clusters$wgsID_short == x, "ITS2"] }))]) %>%  
+  hang.dendrogram(hang = -1)
+
+#Increase brench lengths for clearer visualization 
+dend2=raise.dendrogram(dend2, 0.5)
+
+
+#Create a tanglegram
+dendCombined <- dendlist(dend1, dend2)
+
+
+png(height=465, width=700, file=paste0(figpath,"Host_RAxML_symbionts_kmer_tanglegram_unanotated.png"), res=300, units='mm')
+dendCombined2<-dendCombined %>%
+  untangle(method = "step2side") %>%
+  tanglegram(common_subtrees_color_lines = F,
+             highlight_distinct_edges = F,
+             highlight_branches_lwd = F,
+             common_subtrees_color_lines_default_single_leaf_color = "black",
+             lwd = 2,
+             sort = F,add_points=T,columns_width=c(6,2,6),edge.lwd=4,left_dendo_mar=c(2.1,5,2.1,0.5),right_dendo_mar=c(2.1,0.5,2.1,5),color_lines=group_colors[unlist(lapply(labels(rerooted_bootstrap_tree), 
+                                                      function(x) { pop[pop$sample == x, "Group"] }))],axes=F,margin_inner=0.5)
+dev.off()
+```
+

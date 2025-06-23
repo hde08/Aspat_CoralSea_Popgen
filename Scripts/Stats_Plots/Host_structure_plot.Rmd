@@ -1,0 +1,240 @@
+---
+title: "Host_structure_plot"
+author: "Hugo DENIS"
+date: "2025-06-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Script to plot the results of coral host population genomics: PCA, ADMIXTURE and demographic modeling results
+#Figure 1
+
+#Load packages
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+library(cowplot)
+library(ggspatial)
+library(scatterpie)
+library(ggnewscale)
+library(ggOceanMaps)
+```
+
+#Load geographic data
+```{r}
+path="C:/Users/Hugo/Documents/Data/Host_structure_data/"
+figpath="C:/Users/Hugo/Documents/Figures/Genomics/Manuscripts_figures/"
+
+#Load sampling site coordinates
+site_coordinates=xlsx::read.xlsx(paste0(path,"Sampling_site_coordinates.xlsx"),sheetName = "Feuil1",check.names=F,rowIndex=1:30,colIndex = 1:7,colClasses = c(rep("character",2),rep("numeric",5)))
+
+#Load Millenium project coral reef shapefiles
+unep_reef_uncrop<-sf::st_read(paste0(path,"/14_001_WCMC008_CoralReefs2018_v4_1/01_Data/WCMC008_CoralReef2018_Py_v4_1.shp"))
+
+#Load Western Pacific countries border 
+australia_border<-raster::getData("GADM",country="AUS",level=0)
+ncl_border<-raster::getData("GADM",country="NCL",level=0)
+van_border<-geodata::gadm(country="VUT",level=0,path=path)
+van_border=sf::st_as_sf(van_border)
+
+#Load World countries border
+world=rnaturalearth::ne_countries(returnclass = "sf")["geometry"]
+```
+
+#Load metadata
+```{r}
+meta_colony=read.table(paste0(path,"Colony_metadata_Aspat_GBR_NC.txt"),header=T,sep="\t")
+```
+
+
+#Load genomic data 
+```{r}
+#Specify dataset missingness for plotting 
+MISS="20"
+#Specify minor allele frequency filtering for plotting
+m="0.05"
+#Specify number of ADMIXTURE ancestral populations for plotting
+K_optimal="K=4"
+
+#Load ADMIXTURE results for K=1-6
+admix_df=intersect(list.files(path,"*.Q$",full.names=T),list.files(path,paste0("aspat_clean_all_chr_SNP_filtered_2_",MISS,"mis_noclones_recoded_MAF",m,"_LD0.2"),full.names=T)) %>% lapply(function(x)read.table(x) %>% mutate(K_number=sub(".Q","",sub(".*0.2\\.","",x)))) %>% bind_rows()
+
+#Load corresponsing ADMIXTURE sample names and merge
+sample.names=read.table(paste0(path,"aspat_clean_all_chr_SNP_filtered_2_noclones_sample_names.txt"),header=F,col.names=c("sample"))
+sample.names$wgsID_short=sub(".*Aspat-","",sub("_.*","",sample.names$sample))
+admix_df=cbind(data.frame(wgsID_short=rep(sample.names$wgsID_short,6)), data.frame(admix_df)) %>% gather(c(V1,V2,V3,V4,V5,V6),key="Cluster",value="Prop") %>% mutate(K_number=paste0("K=",as.character(K_number))) %>% merge(pop %>% dplyr::select(wgsID_short,Group),by="wgsID_short") 
+
+#Filter out outlier samples
+admix_df=admix_df %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+
+#Load PCA covariance matrix 
+cov=readRDS(paste0(path,"aspat_clean_all_chr_SNP_filtered_2_",M,"mis_noclones_recoded_MAF",m,"_LD0.2",".cov.rds"))
+cov.scores=as.data.frame(cov$scores)
+cov.scores$ID=rownames(cov.scores)
+cov.scores$wgsID_short=sub("_.*","",sub(".*Aspat-","",cov.scores$ID))
+cov.scores=cov.scores %>% merge(meta_colony %>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster),by.x="locationID",by.y="Site.name"),by="wgsID_short")
+  
+#Remove outlier samples
+cov.scores=cov.scores %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
+
+#Load Demographic modeling results 
+migration_rate=read.table(paste0(path,"Bootstrap_parameters_allpairs.txt"),header=T) 
+```
+
+#Make PCA plots 
+```{r}
+typecolors<-c("#016765","#079CEF","#FFCC33","#CC791E")
+#typecolors<-c("#009E73","#56B4E9","#FFCC33","#CC791E")
+names(typecolors)<-c("NC","CB","GBR_South","GBR_Central_North")
+
+#Plot PC1-PC2
+i=1
+perc1=round(100*cov$eig[i]/sum(cov$eig),2)
+perc2=round(100*cov$eig[i+1]/sum(cov$eig),2)
+  
+PC1=paste0("PC",as.character(i))
+PC2=paste0("PC",as.character(i+1))
+  
+pca12 = ggplot(data = cov.scores, aes_string(x=PC1, y=PC2, fill = "Genomic.Cluster",color="Genomic.Cluster")) + geom_point(size=5.5,alpha=0.8,pch=21) + theme_classic() + theme(axis.text.x = element_text(size=20,colour='black'),axis.text.y = element_text(size=20,colour='black'),axis.title.y = element_text(size=20),axis.title.x = element_text(size=20),legend.text=element_text(size=22),legend.title=element_text(size=25),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position="right",legend.text.align = 0,legend.background = element_rect(fill="transparent"),axis.ticks.length = unit(0.3, "cm"),axis.ticks = element_line(size = 1)) + labs(x=paste0(PC1," (",as.character(perc1),"%)"),y=paste0(PC2," (",as.character(perc2),"%)")) + scale_fill_manual(values=typecolors,labels=as_labeller(c("NC"="NC","CB"="CB","GBR_South"="South GBR","GBR_Central_North"="Central/North GBR")))  + scale_colour_manual(values=typecolors) + guides(fill=guide_legend(override.aes=list(size=14),title="Genomic Cluster"),color="none") + stat_ellipse(level=0.95,linetype="dashed",linewidth=1) + guides(fill="none")
+
+#Plot PC2-PC3
+i=2
+perc1=round(100*cov$eig[i]/sum(cov$eig),2)
+perc2=round(100*cov$eig[i+1]/sum(cov$eig),2)
+  
+PC1=paste0("PC",as.character(i))
+PC2=paste0("PC",as.character(i+1))
+
+
+pca23=ggplot(data = cov.scores, aes_string(x=PC1, y=PC2, fill = "Genomic.Cluster",color="Genomic.Cluster")) + geom_point(size=5.5,alpha=0.8,pch=21) + theme_classic() + theme(axis.text.x = element_text(size=20,colour='black'),axis.text.y = element_text(size=20,colour='black'),axis.title.y = element_text(size=20),axis.title.x = element_text(size=20),legend.text=element_text(size=22),legend.title=element_text(size=25),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(15,"mm"),legend.key.height=unit(20,"mm"),legend.position="right",legend.text.align = 0,legend.background = element_rect(fill="transparent"),axis.ticks.length = unit(0.3, "cm"),axis.ticks = element_line(size = 1)) + labs(x=paste0(PC1," (",as.character(perc1),"%)"),y=paste0(PC2," (",as.character(perc2),"%)")) + scale_fill_manual(values=typecolors,labels=as_labeller(c("NC"="NC","CB"="CB","GBR_South"="South GBR","GBR_Central_North"="Central/North GBR")))  + scale_colour_manual(values=typecolors) + guides(fill=guide_legend(override.aes=list(size=14),title="Genomic Cluster"),color="none") + stat_ellipse(level=0.95,linetype="dashed",linewidth=1) + guides(fill="none")
+
+```
+
+#Make ADMIXTURE plots
+```{r}
+#Combine ADMIXTURE data with site coordinates and restrict to selected optimal K value
+admix_df_site=admix_df %>% subset(K_number==K_optimal & Cluster %in% c("V1","V2","V3","V4")) %>% merge(meta_colony %>% dplyr::select(wgsID_short,locationID,Lon,Lat),by="wgsID_short") %>% group_by(locationID,Cluster) %>% dplyr::summarize(meanProp=mean(Prop,na.rm=T),Lat=mean(Lat,na.rm=T),Lon=mean(Lon,na.rm=T)) %>% pivot_wider(names_from = "Cluster",values_from = "meanProp")
+
+admix_df$Group=factor(admix_df$Group,levels=c("Group1","Group2","Group4","Group3"))
+group_labels=c("Group1"="Central/Northern GBR","Group2"="Southern GBR","Group3"="NC","Group4"="CB")
+
+popcolors<-c("#CC791E","#016765","#079CEF","#FFCC33","grey","black")
+#popcolors<-c("#CC791E","#009E73","#56B4E9","#FFCC33","grey","black")
+names(popcolors)=paste0("V",as.character(seq(1,6)))
+
+admix_plot = ggplot(data = admix_df %>% subset(K_number==K_optimal), aes(x=wgsID_short, y=Prop, colour = Cluster,fill=Cluster)) + geom_bar(position = "stack",stat="identity") + theme_classic()+ theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + guides(fill=F,colour=F)+facet_grid(~Group,scales="free_x",switch="y",labeller=labeller(Group=group_labels)) + theme(axis.text.x = element_blank(),axis.text.y = element_text(size=20,color="black"),axis.title.y = element_text(size=25),axis.title.x = element_text(size=25,margin = unit(c(1,0,0,0),"cm")),legend.text=element_text(size=20),legend.title=element_text(size=20),panel.background =element_rect(fill="white"),plot.margin=margin(t=8,r=4,b=10,l=4,unit="pt"),title=element_text(size=21),panel.border=element_rect(colour="black",fill=NA,size=0.5),legend.key.width = unit(5,"mm"),legend.key.height=unit(15,"mm")) + theme(strip.background = element_blank(),strip.text = element_text(size=20,face="bold"),plot.margin=unit(c(0.5,0.5,0.5,1),"cm"),strip.placement="outside",panel.spacing = unit(0.1,"cm"),panel.spacing.y = unit(1,"cm"),plot.background = element_rect(color="transparent",fill="transparent")) + labs(x="",y="") + scale_fill_manual(values=popcolors) + scale_colour_manual(values=popcolors) + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1),labels=c("0","0.5","1"))
+```
+
+#Make map with ADMIXTURE & demographic modeling results 
+```{r}
+#Make world map to put as insert
+world_map=ggplotGrob(ggplot(data = world) +
+    geom_sf(fill="white",colour="black")+
+  geom_rect(aes(xmin = 2564417, xmax = 5174417, ymin = 1564417, ymax = 3064417), color = "#092347", fill = NA,size=1) +
+    coord_sf(crs = "+proj=laea +lat_0=-10 +lon_0=160 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs") +theme_void())
+
+#Make base sitemap of the study area
+site_map=basemap(limits = c(144,169, -26,-13),
+        bathymetry = TRUE,land.col=NA,land.border.col=NA,
+        glaciers = FALSE,legend.position="bottom",bathy.style = "rcb",bathy.alpha=0.5)  + geom_polygon(data=ncl_border, aes(long,lat,group=group),fill="grey",colour="grey40",size=0.3) + geom_polygon(data=australia_border, aes(long,lat,group=group),fill="grey",colour="grey40",size=0.3)+ geom_sf(data=van_border ,fill="grey",colour="grey40",size=0.3)+ geom_sf(data = unep_reef_uncrop['LAYER_NAME'],fill="grey",color="grey40",xlim=c(144,167),ylim=c(-25,-12),size=0.3)+ theme(legend.title = element_text(size=17,color="black",margin=margin(t = 0, r = 7, b = 35, l = 0)),legend.text = element_text(size=17,color="black"),legend.background = element_rect(fill = "transparent",colour = "transparent"),legend.key.height = unit(4,"mm"),legend.key.width = unit(20,"mm"),legend.position = "none",legend.margin=margin(0,0,0,0),
+        legend.box.margin=margin(-10,0,0,0),axis.text.x = element_text(size=20,color="#092347",vjust = -0.7,hjust=-0.2,
+                                 margin = margin( t = -30)),axis.text.y=element_text(size=20,color="#092347",hjust = -0.9,vjust=-0.3,margin=margin(l=0,r=-45,b=0,t=0)),plot.background= element_rect(fill="white", colour="white"),panel.background = element_rect(fill="transparent", colour="#092347",linewidth=1.1),axis.ticks =element_blank())+ labs(x="",y="")+
+  scale_y_continuous(labels = ~ paste0(.x, "\u00B0"))+
+  scale_x_continuous(labels = ~ paste0(.x, "\u00B0"))+
+  ggspatial::annotation_scale(
+    location = "tr",
+    bar_cols = c("#092347", "white"),
+    text_family = "ArcherPro Book",line_width = 1.5,text_cex=2,pad_y = unit(0.4, "in")
+  ) + ggspatial::annotation_north_arrow(location = "tr", which_north = "true", pad_x = unit(0.4, "in"), pad_y = unit(0.65, "in"),height=unit(2,"cm"),width=unit(2,"cm"), style = north_arrow_fancy_orienteering(fill = c("#092347", "white"),text_size=20)) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")+ geom_point(data=site_coordinates,aes(x=Lon,y=Lat),size=3,shape=21, color="#092347",fill="#092347") + guides(fill="none",color="none")
+
+#Add ADMIXTURE results to the map 
+#Adjust sites positions for better visualization 
+meta_colony$Lon=as.numeric(meta_colony$Lon)
+meta_colony$Lat=as.numeric(meta_colony$Lat)
+admix_df_site=admix_df %>% subset(K_number==K_optimal & Cluster %in% c("V1","V2","V3","V4")) %>% merge(meta_colony %>% dplyr::select(wgsID_short,locationID,Lon,Lat),by="wgsID_short") %>% group_by(locationID,Cluster) %>% dplyr::summarize(meanProp=mean(Prop,na.rm=T),Lat=mean(Lat,na.rm=T),Lon=mean(Lon,na.rm=T)) %>% pivot_wider(names_from = "Cluster",values_from = "meanProp")
+
+admix_df_site=cbind(admix_df_site,data.frame(x.adj=c(-1,1,1,-1,1,2,1,-0.5,1,2,1,-1.5,-1,-1,-1,1.5,2,-1,-0.6,1,2,1,-1,1,2,1,1,-1,1),y.adj=c(-0.2,-0.5,1,1,0.5,-0.5,-1,0,0,0.5,1,-1,0,0.5,0,0.5,-1,-0.4,-0.2,0,0.5,-0.3,0,0.5,1,0.5,0,-0.5,0)))
+admix_df_site=admix_df_site %>% mutate(Lon.adj=Lon+x.adj,Lat.adj=Lat+y.adj)
+
+#Add the ADMIXTURE pie charts to the base plot
+site_map_pie=site_map + geom_segment(data=admix_df_site,aes(x=Lon,xend=Lon.adj,y=Lat,yend=Lat.adj),size=0.7,colour="#092347") + new_scale_fill()  + geom_scatterpie(data=admix_df_site,aes(x=Lon.adj,y=Lat.adj),cols=c("V1","V2","V3","V4"),pie_scale = 0.9,colour=NA) + scale_fill_manual(values=popcolors,guide="none") + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")
+
+#Add the demographic modeling migration rates to the base plot 
+
+#Add arrows with migration rates on the map 
+arrow_coordinates=data.frame(Pop=c("Group1-Group2","Group1-Group3","Group1-Group4","Group2-Group3","Group2-Group4","Group3-Group4"),x=c(149,148,150,155,154.6,163),y=c(-20.5,-16,-18,-24,-23,-21),xend=c(151.5,164,156,164,157,159),yend=c(-23.2,-19.5,-19,-23.5,-20.5,-20.5))
+
+migration_rate=migration_rate %>% subset(Real_parameter %in% c("m12","m21")) %>% merge(arrow_coordinates,by.x="Pop_short",by.y="Pop") %>% cbind(curvature=c(0.3,0.5,-0.2,0.4,0.5,0.4,0.2,-0.4,-0.3,-0.3,-0.2,-0.2),arrow_dir=rep(c("forward", "backward"), length.out = 12),linetype=c("solid","dashed","dashed","solid","dashed","solid","dashed","solid","solid","dashed","solid","dashed")) 
+
+site_map_pie_arrow=site_map_pie
+
+#Add dadi migration rates on top of map
+#Adjust exponent for lines contrast 
+exponent=4
+
+for (i in seq_len(nrow(migration_rate))){
+  row <- migration_rate[i, ]
+  curv=migration_rate$curvature[i]
+  linetype=migration_rate$linetype[i]
+  
+  print(curv)
+  
+  if (row$arrow_dir == "forward") {
+    site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=(log(row$median*10^10)/10)^exponent,
+      x = row$x, y = row$y,
+      xend = row$xend, yend = row$yend,
+      curvature = curv,
+      linetype=linetype,
+      arrow = arrow(length = unit(0.03, "npc")),
+      color = "#092347"
+    )
+  } else if (row$arrow_dir == "backward") {
+    site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=(log(row$median*10^10)/10)^exponent,
+      x = row$xend, y = row$yend,
+      xend = row$x, yend = row$y,
+      curvature = curv,
+      linetype=linetype,
+      arrow = arrow(length = unit(0.03, "npc")),
+      color = "#092347"
+    )
+  }
+}
+
+library(scales)
+#Create dummmy legend 
+dummy=ggplot(data=migration_rate) + geom_curve(aes(x=x,y=y,yend=yend,xend=xend,size=(log(median*10^10)/10)^exponent)) + 
+  scale_size_continuous(
+    range=c((log(min(migration_rate$median)*10^10)/10)^exponent,(log(max(migration_rate$median)*10^10)/10)^exponent),
+    name = "",
+    breaks=c(0.25,0.75,1.25),
+    labels=c(formatC(exp(0.25*10)/10^10, format = "e", digits = 1),formatC(exp(0.75*10)/10^10, format = "e", digits = 1),formatC(exp(1.25*10)/10^10, format = "e", digits = 1)),
+    guide = guide_legend(
+      title.position = "top",       
+      title.hjust = 0.5,            
+      label.position = "right",    
+      label.theme = element_text(size = 22,color="#092347"),  
+      direction = "vertical",    
+      override.aes = list(color = "#092347"))) + theme(legend.background = element_rect(fill = NA, color = NA),legend.key = element_rect(fill = NA))
+
+size_legend=cowplot::get_legend(dummy)
+
+site_map_pie_arrow=site_map_pie_arrow + draw_plot(size_legend,x=164.5,y=-16.5,width=1,height=1)
+
+```
+
+#Combine all plots in one figure and save 
+```{r}
+full_site_map<-site_map_pie_arrow+ annotation_custom(grob=world_map,xmin=145,xmax=149.5,ymin=-Inf,ymax=-20)
+
+#Aggregate plots 
+total_plot=cowplot::ggdraw() +draw_plot(full_site_map,x=0.325,y=0.03,width=0.65,height=0.7) +draw_plot(admix_plot,x=0.320,y=0.67,width=0.625,height=0.345) +draw_plot(pca12,x=0,y=0.5,width=0.3,height=0.495) +draw_plot(pca23,x=0,y=0.01,width=0.3,height=0.495)  + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b","c"),x=c(0,0.32,0.32),y=c(1,1,0.7),size=35)+ theme(legend.key.width =unit(5,"cm"))
+
+ggsave(total_plot,filename=paste0(figpath,"Figure_1_v3.png"),width=22,height=10,dpi=500)
+
+```
+
