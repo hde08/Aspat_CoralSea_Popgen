@@ -72,16 +72,3 @@ Correspondence : Hugo DENIS, Institut de Recherche pour le Développement, Prome
 4 Symbiont_structure_plot.Rmd > Make Figure 4  
 5 RDA_analyses.Rmd > Scripts to conduct RDA analyses and produce results from Table 2
 
-### Scripts to create supplementary figures 
-2 Figure_S6.Rmd  
-3 Figure_S7.Rmd  
-4 Figure_S8.Rmd  
-5 Figure_S9.Rmd  
-6 Figure_S10.Rmd  
-7 Figure_S11.Rmd  
-8 Figure_S12.Rmd  
-9 Figure_S16.Rmd  
-10 Figure_S17.Rmd  
-11 Figure_S18.Rmd  
-12 Figure_S19.Rmd  
-13 Figure_S20.Rmd  
