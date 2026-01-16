@@ -23,6 +23,7 @@ library(scatterpie)
 library(ggnewscale)
 library(ggOceanMaps)
 library(vegan)
+library(ggrepel)
 ```
 
 #Load geographic data
@@ -56,6 +57,9 @@ meta_colony=read.table(paste0(path,"Colony_metadata_Aspat_GBR_NC.txt"),header=T,
 #Load symbiont ITS2 annotation
 cluster_df=read.table(paste0(path,"D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
 
+cluster_df$ITS2[cluster_df$ITS2=="C50b" & cluster_df$Genomic.cluster=="GBR_South"]="C50b_SGBR"
+cluster_df$ITS2[cluster_df$ITS2=="C50b" & cluster_df$Genomic.cluster=="NC"]="C50b_NC"
+
 #Load result of dbRDA
 dbRDA=readRDS(paste0(path,"Symbiont_full_dbRDA.rds"))
 ```
@@ -80,7 +84,7 @@ site_map=basemap(limits = c(144,169, -26,-13),
     location = "tr",
     bar_cols = c("#092347", "white"),
     text_family = "ArcherPro Book",line_width = 1.5,text_cex=4,pad_y = unit(0.4, "in")
-  ) + ggspatial::annotation_north_arrow(location = "tr", which_north = "true", pad_x = unit(0.4, "in"), pad_y = unit(0.8, "in"),height=unit(4,"cm"),width=unit(4,"cm"), style = north_arrow_fancy_orienteering(fill = c("#092347", "white"),text_size=50)) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")+ geom_point(data=site_coordinates,aes(x=Lon,y=Lat),size=5,shape=21, color="#092347",fill="#092347") + guides(fill="none",color="none")
+  ) + ggspatial::annotation_north_arrow(location = "tr", which_north = "true", pad_x = unit(0.4, "in"), pad_y = unit(0.8, "in"),height=unit(4,"cm"),width=unit(4,"cm"), style = north_arrow_fancy_orienteering(fill = c("#092347", "white"),text_size=50)) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")+ geom_point(data=site_coordinates,aes(x=Lon,y=Lat),size=5,shape=21, color="#092347",fill="#092347") + guides(fill="none",color="none")+ theme(panel.grid = element_blank())
 
 #Remove samples that could not be assigned an ITS2 type
 cluster_df=cluster_df %>% subset(!is.na(Cluster))
@@ -94,15 +98,14 @@ cluster_df_site=cluster_df %>% group_by(locationID) %>% mutate(Lon=mean(Lon,na.r
 cluster_df_site=cbind(cluster_df_site,data.frame(x.adj=c(-1,1,1,-1,1,2,1,-0.5,1,2,1,-1.5,-1,-1,-1,1.5,2,-1,-0.6,1,2,1,-1,1,2,1,1,-1,1),y.adj=c(-0.2,-0.5,1,1,0.5,-0.5,-1,0,0,0.5,1,-1,0,0.5,0,0.5,-1,-0.4,-0.2,0,0.5,-0.3,0,0.5,1,0.5,0,-0.5,0)))
 cluster_df_site=cluster_df_site %>% mutate(Lon.adj=Lon+x.adj,Lat.adj=Lat+y.adj)
 
-cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
-names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
 
-#Normalize values for the pie plot 
-cluster_df_site$Tot=rowSums(cluster_df_site[,4:7])
-cluster_df_site[,4:7]=cluster_df_site[,4:7]/cluster_df_site$Tot
+cluster_colors=c("#6e350f","#D38B46","#4ec49b","#7683fe","#e76f51")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b_SGBR","C50b_NC","C50c")
 
-#Add the pie chart on the top of the plot 
-site_map_pie=site_map + geom_segment(data=cluster_df_site,aes(x=Lon,xend=Lon.adj,y=Lat,yend=Lat.adj),size=0.7,colour="#092347") + new_scale_fill()  + geom_scatterpie(data=cluster_df_site,aes(x=Lon.adj,y=Lat.adj),cols=c("C3k/C3bo","C50c","C3k","C50b"),pie_scale = 0.9,colour=NA) + scale_fill_manual(values=cluster_colors) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs") + theme(legend.key.height = unit(10,"mm"),legend.key.width = unit(10,"mm"),legend.position = "none") + labs(fill="ITS2 type")
+cluster_df_site$Tot=rowSums(cluster_df_site[,4:8])
+cluster_df_site[,4:8]=cluster_df_site[,4:8]/cluster_df_site$Tot
+
+site_map_pie=site_map + geom_segment(data=cluster_df_site,aes(x=Lon,xend=Lon.adj,y=Lat,yend=Lat.adj),size=0.7,colour="#092347") + new_scale_fill()  + geom_scatterpie(data=cluster_df_site,aes(x=Lon.adj,y=Lat.adj),cols=c("C3k/C3bo","C50c","C3k","C50b_SGBR","C50b_NC"),pie_scale = 0.9,colour=NA) + scale_fill_manual(values=cluster_colors) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs") + theme(legend.key.height = unit(10,"mm"),legend.key.width = unit(10,"mm"),legend.position = "none") + labs(fill="ITS2 type")
 
 full_site_map<-site_map_pie+ annotation_custom(grob=world_map,xmin=145,xmax=149.5,ymin=-Inf,ymax=-20)
 ```
@@ -137,6 +140,9 @@ env_scores_scaling1=env_scores_scaling1 %>% subset(Variable %in% c("MMM_5km","DH
 cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
 names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
 
+cluster_colors=c("#6e350f","#D38B46","#4ec49b","#7683fe","#e76f51")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b_SGBR","C50b_NC","C50c")
+
 
 #Adjust size of predictor length
 dbRDA_plot=function(var,axis1,axis2,coef,v1,v2,h1,h2){
@@ -149,6 +155,8 @@ dbRDA2_percent <- round(variance_explained[axis2], 1)
 env_scores_scaling1$CAP1scaled=Coef*env_scores_scaling1$CAP1
 env_scores_scaling1$CAP2scaled=Coef*env_scores_scaling1$CAP2
 env_scores_scaling1$CAP3scaled=Coef*env_scores_scaling1$CAP3
+env_scores_scaling1$CAP4scaled=Coef*env_scores_scaling1$CAP4
+env_scores_scaling1$CAP5scaled=Coef*env_scores_scaling1$CAP5
 
 
 #Adjust position of eigenvectors labels 
@@ -187,17 +195,22 @@ dbRDA_plot_RDA12=dbRDA_plot("ITS2",1,2,3,-0.2,1.2,0.4,0.3)+ggplot2::scale_color_
 
 dbRDA_plot_RDA23=dbRDA_plot("ITS2",2,3,3,-0.2,1.2,0.5,0.5)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")  +ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("CB"="CB","South GBR"="S GBR","Central/North GBR"="CN GBR","NC"="NC"))) + guides(colour = F,shape=F)
 
-dummy_plot=dbRDA_plot("ITS2",2,3,4.5,-0.2,1.2,0.5,0.5)+ggplot2::scale_color_manual(values=cluster_colors,name="Major ITS2")  +ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host population",labels=as_labeller(c("CB"="CB","South GBR"="S GBR","Central/North GBR"="CN GBR","NC"="NC")))  + theme(legend.key.width =unit(3,"cm"),legend.text=element_text(size=28,color="black",margin = margin(l = -20, unit = "pt")),legend.title=element_text(size=30,color="black",margin = margin(l = 30, unit = "pt")),legend.spacing.x = unit(0, "mm")) +
+dummy_plot=dbRDA_plot("ITS2",2,3,4.5,-0.2,1.2,0.5,0.5)+ggplot2::scale_color_manual(values=cluster_colors,name="Major\nITS2",labels = c(
+  "C3k"="C3k",
+  "C3k/C3bo"="C3k/C3bo",
+  "C50b_SGBR"="C50b",
+  "C50b_NC"="C50b",
+  "C50c"="C50c"
+)
+)  +ggplot2::scale_shape_manual(values=c(16, 17, 15, 18),name="Host\npopulation",labels=as_labeller(c("CB"="CB","South GBR"="S GBR","Central/North GBR"="CN GBR","NC"="NC")))  + theme(legend.key.width =unit(3,"cm"),legend.text=element_text(size=28,color="black",margin = margin(l = -20, unit = "pt")),legend.title=element_text(size=30,color="black",margin = margin(l = 30, unit = "pt")),legend.spacing.x = unit(0, "mm")) +
   guides(shape = guide_legend(override.aes = list(size = 15)),color = guide_legend(override.aes = list(size = 15)))
 legend <-ggpubr::get_legend(dummy_plot)
 
 ```
 
-
 #Combine plot together and save 
 ```{r}
-map_dbRDA_combine_plot=cowplot::ggdraw() +draw_plot(full_site_map,x=0.025,y=0.45,width=1,height=0.55) +draw_plot(dbRDA_plot_RDA12,x=0.02,y=0.05,width=0.46,height=0.4) +draw_plot(dbRDA_plot_RDA23,x=0.505,y=0.05,width=0.46,height=0.4) + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b"),x=c(0.03,0.03),y=c(1,0.45),size=50) + draw_plot(legend,x=0,y=0,width=1,height=0.05)
+map_dbRDA_combine_plot=cowplot::ggdraw() +draw_plot(full_site_map,x=0.025,y=0.45,width=1,height=0.55) +draw_plot(dbRDA_plot_RDA12,x=0.02,y=0.05,width=0.46,height=0.4) +draw_plot(dbRDA_plot_RDA23,x=0.505,y=0.05,width=0.46,height=0.4) + theme(plot.background = element_rect(fill="white",color="white"))+draw_plot_label(label=c("a","b"),x=c(0.03,0.03),y=c(1,0.45),size=50) + draw_plot(legend,x=0,y=0,width=1,height=0.05)
 
-ggsave(map_dbRDA_combine_plot ,filename=paste0("C:/Users/Hugo/Documents/Figures/Genomics/Manuscripts_figures/","Figure_4_withoutlabels.png"),width=22.5,height=20,dpi=300)
+ggsave(map_dbRDA_combine_plot ,filename=paste0("C:/Users/Hugo/Documents/Figures/Genomics/Manuscripts_figures/","Figure_4_withoutlabels_v3.png"),width=22.5,height=20,dpi=300)
 ```
-

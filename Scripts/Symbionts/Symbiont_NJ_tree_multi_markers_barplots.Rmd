@@ -1,0 +1,171 @@
+---
+title: "Symbionts_kmer_analyses"
+author: "Hugo DENIS"
+date: "2024-12-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Script to make the global summary figure (Figure S13) including alignment-based and alignment-free methods 
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(Biostrings)
+library(aplot)
+library(ggtree)
+library(cowplot)
+library(gg3D)
+library(phangorn)
+```
+
+#Load data 
+```{r}
+path="C:/Users/Hugo/Documents/Data/symbionts/"
+figpath="C:/Users/Hugo/Documents/Figures/Symbionts/"
+
+#Colony and sites metadata
+meta_colony=read.table("C:/Users/Hugo/Documents/Data/Colony_metadata_Aspat_GBR_NC.txt",header=T,sep="\t")
+
+#Load psbA ncr data 
+psbAncr_consensus_uniqmap=read.table(paste0(path,"Summary_mapping_Cladocopium_psbA_100-90_allref_aspat_clean_uniqmap.tab"),header=T)
+
+#Load ITS2 graftM data 
+graftM_its2=read.table(paste0(path,"ITS2_abundance_aspat_clean.txt"),header=T)
+
+#Load D2S-based k-mer profiles dissimilarity data 
+kmer_mat=as.matrix(read.table(paste0(path,"D2s_50M_dist_matrix_aspat_clean.txt"),check.names = F))
+
+#Number of symbiont reads recovered in each sample (for filtering of samples used in the kmer data)
+Nreads=read.table(paste0(path,"Mapped_symbiont_read_counts_fasta.txt"),col.names=c("sample","Nreads")) %>% mutate(wgsID_short=sub("_.*","",sub(".*Aspat-","",basename(sample))))
+Correct_samples=Nreads %>% subset(wgsID_short %in% rownames(kmer_mat) & Nreads>340000)
+Correct_samples$wgsID_short=paste0(Correct_samples$wgsID_short,"_")
+```
+
+#Format data
+#Only 776 samples are retained in this figure as some samples are retained as no ITS2 reads were recovered in some of the samples and some samples had less than 50M bp leading to their exclusion 
+```{r}
+#Remove ITS2 sequences that have <5 reads for readibility 
+low_abund_ITS2=names(graftM_its2[2:22])[colSums(graftM_its2[,2:22])<5]
+graftM_its2=graftM_its2 %>% dplyr::select(-low_abund_ITS2)
+
+#Convert to wide format the abundance tables 
+graftM_its2=graftM_its2 %>% mutate(Total_reads=rowSums(across(where(is.numeric)))) %>% subset(Total_reads>0)
+graftM_its2[,2:9]=graftM_its2[,2:9]/graftM_its2$Total_reads
+graftM_its2 =graftM_its2 %>% tidyr::gather(C1:Cladocopium_sp,key="ITS2",value="Rel_abund")
+
+psbAncr_consensus_uniqmap=psbAncr_consensus_uniqmap %>% pivot_wider(names_from = "Ref",values_from = "N") %>% mutate(Total_reads=rowSums(across(where(is.numeric)),na.rm=T)) %>% subset(Total_reads>0)
+psbAncr_consensus_uniqmap[,3:10]=psbAncr_consensus_uniqmap[,3:10]/psbAncr_consensus_uniqmap$Total_reads
+psbAncr_consensus_uniqmap=psbAncr_consensus_uniqmap %>% tidyr::gather(Cladocopium.goreauii:Cladocopium.latusorum,key="psbAncr",value="Rel_abund")
+
+#Top 3 ITS2 sequences across the whole dataset
+top3=graftM_its2 %>% group_by(ITS2) %>% dplyr::summarise(A=sum(Rel_abund)) %>% arrange(desc(A)) %>% slice_head(n=3)
+
+#Top 2 psbA ncr sequence across the whole dataset 
+top2=psbAncr_consensus_uniqmap %>% group_by(psbAncr) %>% dplyr::summarise(A=sum(Rel_abund,na.rm=T)) %>% arrange(desc(A)) %>% slice_head(n=2)
+
+#Subset each datasets to samples where reads were recovered using the 3 approaches
+keep_samples=intersect(unique(graftM_its2$wgsID_short),intersect(unique(rownames(kmer_mat)),unique(psbAncr_consensus_uniqmap$wgsID_short)))
+
+keep_samples=keep_samples[keep_samples %in% Nreads$wgsID_short[Nreads$Nreads>340000]]
+
+graftM_its2=graftM_its2 %>% subset(wgsID_short %in% keep_samples)
+psbAncr_consensus_uniqmap=psbAncr_consensus_uniqmap %>% subset(wgsID_short %in% keep_samples)
+kmer_mat=kmer_mat[rownames(kmer_mat) %in% keep_samples,colnames(kmer_mat) %in% keep_samples]
+```
+
+
+#Plot psbA ncr and ITS2 ncr barplot side by side with k-mer clustering 
+
+```{r}
+D2S_nj=ape::nj(as.dist(kmer_mat))
+
+ybar=nrow(kmer_mat)-50
+offset=round(nrow(kmer_mat)/80)
+
+#Cut in the main clusters
+n_clusters <- 4
+clusters <- cutree(D2S_hc, k = n_clusters)
+
+kmer_tree=ggtree(D2S_nj)+ geom_tiplab(align=TRUE,size=0.5,alpha = 0) + hexpand(.01) +
+  scale_color_manual(values = palette) +
+  geom_treescale(x = -3, y = ybar, width = 0.5, color = "black",linesize = 2,fontsize=10,offset = offset)
+
+#Add clusters colors
+palette <- RColorBrewer::brewer.pal(n_clusters, "Paired")
+#palette=colorRampPalette(RColorBrewer::brewer.pal(12, "Paired"))(n_clusters)
+
+kmer_tree$data$cluster <- clusters[match(kmer_tree$data$label, rownames(kmer_mat))]
+kmer_tree$data$cluster=1
+kmer_tree=kmer_tree + geom_tree(aes(color=factor(cluster)),size=0.3) + theme(legend.position="none",plot.margin=margin(t=0,b=0,l=0,r=10))+
+  geom_segment(data = . %>% filter(isTip),
+               aes(x = x, xend = max(x) + 0.1, y = y, yend = y),
+               linetype = "dotted", size = 0.4, color = "black") + 
+    geom_tippoint( size=0.4) + scale_x_continuous(expand=c(0,0)) 
+
+tree_order <- kmer_tree$data %>%
+  dplyr::filter(isTip) %>%
+  dplyr::arrange(y) %>%     # important: ggtree stores y positions, not x
+  dplyr::pull(label)
+
+
+#Plot ITS2 abundance barplot
+graftM_its2$label=factor(graftM_its2$wgsID_short,levels=tree_order)
+psbAncr_consensus_uniqmap$label=psbAncr_consensus_uniqmap$wgsID_short
+
+ITS2_colors<-c("grey","#A9E4EF","#CC79A7","#62BAAC","#4B8077","#CC791E","#E2655C","#009E73")
+names(ITS2_colors)<-sort(unique(graftM_its2$ITS2))
+
+bold_vector=names(ITS2_colors)
+for(i in 1:length(bold_vector)){ 
+    bold_vector[i]<-if_else(bold_vector[i]  %in% top3$ITS2,paste('**',bold_vector[i] ,'**',sep=''),bold_vector[i]) 
+}  
+
+#Put genra names in italics 
+bold_vector[bold_vector=="**Cladocopium_sp**"]="***Cladocopium sp.***"
+
+ITS2_barplot <- graftM_its2 %>% ggplot( aes(x=label, Rel_abund)) + geom_col(aes(fill=ITS2)) +
+    coord_flip() + theme_tree2() + theme(legend.position='left',axis.text.x=element_text(size=25,color="black"),legend.text =ggtext::element_markdown(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=10,r=10),legend.margin = margin(t=10,b=10,l=0,r=0))+ scale_fill_manual(values = ITS2_colors,labels=bold_vector) + labs(fill="ITS2 variant") + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1))
+
+
+psbA_colors<-c("grey","#A9E4EF","#f5ccb5","#E4D7FC","#A4C1BC","#EABC8A","#D0381A","#0064C8")
+names(psbA_colors)<-sort(unique(psbAncr_consensus_uniqmap$psbAncr))
+
+
+bold_vector=names(psbA_colors)
+for(i in 1:length(bold_vector)){ 
+    bold_vector[i]<-if_else(bold_vector[i]  %in% top2$psbAncr,paste('**',bold_vector[i] ,'**',sep=''),bold_vector[i]) 
+}  
+
+bold_vector=paste0("*",bold_vector,"*")
+
+psbAncr_consensus_uniqmap$label=factor(psbAncr_consensus_uniqmap$label,levels=tree_order)
+
+psbAncr_barplot <- psbAncr_consensus_uniqmap %>% ggplot( aes(x=label, Rel_abund)) + geom_col(aes(fill=psbAncr)) +
+    coord_flip() + theme_tree2() + theme(legend.position='left',axis.text.x=element_text(size=25,color="black"),legend.text = ggtext::element_markdown(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=10,r=0),legend.margin = margin(t=10,b=10,l=0,r=0)) + labs(fill="psbA ncr") + scale_fill_manual(values = psbA_colors,labels=bold_vector) + scale_y_continuous(expand=c(0,0))
+
+typecolors<-c("#016765","#079CEF","#FFCC33","#CC791E")
+names(typecolors)<-c("NC","CB","South GBR","Central/North GBR")
+
+host_genomic_barplot=graftM_its2 %>% distinct(wgsID_short,.keep_all = T) %>% merge(rbind(meta_colony %>% dplyr::select(wgsID_short,locationID,Geographic_cluster))) %>% mutate(label=wgsID_short)  %>%  ggplot(aes(x=label,y=1,group=Geographic_cluster,fill=Geographic_cluster,color=Genomic.Cluster, width = 1))+ geom_col(color="transparent",alpha=0.8)+
+    coord_flip() + theme_tree2() + scale_fill_manual(values=typecolors,labels=c("CB"="Chesterfields-Bellona","Central/North GBR"="Central/Northern GBR","South GBR"="Southern GBR","NC"="New Caledonia")) + theme(axis.text.x = element_blank(),axis.ticks.x = element_blank(),axis.line.x = element_blank()) + labs(fill="Host Genomic \nCluster") + theme(legend.position='left',legend.text = element_text(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=0,r=0),legend.margin = margin(t=10,b=10,l=0,r=0))
+
+shore_dist_data=graftM_its2 %>% distinct(wgsID_short,.keep_all = T) %>% merge(meta_colony %>% dplyr::select(wgsID_short,locationID,Km_to_coastline),by="wgsID_short") %>% mutate(label=wgsID_short)
+shore_dist_data$Km_to_coastline=as.numeric(shore_dist_data$Km_to_coastline)
+shore_dist_data$Km_to_coastline[shore_dist_data$Km_to_coastline>70]=70
+cross_gradient=c("#A9E4EF","#62BAAC","#003366")
+  
+shore_dist_barplot=shore_dist_data %>% ggplot(aes(x=label,y=1,group=Km_to_coastline,fill=Km_to_coastline,color=Km_to_coastline, width = 1))+ geom_col(color="transparent")+
+    coord_flip() + theme_tree2() +scale_fill_gradientn(colours=cross_gradient,limits=c(0,70),breaks=c(0,20,40,60),labels=c("0","20","40",">60")) + theme(axis.text.x = element_blank(),axis.ticks.x = element_blank(),axis.line.x = element_blank()) + labs(fill="Distance to \nshore (km)") + theme(legend.position='left',legend.text = element_text(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=0,r=0),legend.margin = margin(t=10,b=10,l=0,r=0))
+
+
+#Combine the plots together
+Global_plot=psbAncr_barplot %>% insert_left(kmer_tree) %>% insert_right(ITS2_barplot,width=0.3) %>% insert_right(host_genomic_barplot,width=0.1) %>% insert_right(shore_dist_barplot,width=0.1)
+
+ggsave(Global_plot ,filename=paste0(figpath,"kmer_50M_D2S_amplicon_njtree_vfinal.png"),height=20,width=30,dpi=500)
+```

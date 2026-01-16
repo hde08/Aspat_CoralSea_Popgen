@@ -1,0 +1,244 @@
+---
+title: "kmer_ITS2_DIVs_tanglegram"
+author: "Hugo DENIS"
+date: "2026-01-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggdendro)
+library(dendextend)
+library(ggplot2)
+library(dplyr)
+```
+
+#Load samples metadata
+```{r}
+path="C:/Users/Hugo/Documents/Data/"
+figpath="C:/Users/Hugo/Documents/Figures/Symbionts/Symportal_hologenome_comparison"
+
+meta_colony=read.table(paste0(path,"Symbiont_structure_data/Colony_metadata_Aspat_GBR_NC.txt"),header=T,sep="\t")
+```
+
+#Load amplicon sequencing data (Symportal ITS2)
+```{r}
+#Bray-curtis distance between samples based on ITS2 DIVs
+div_unifrac=read.table(paste0(path,"symbionts/Symportal_results_coral_ITS2/between_sample_distances/C/20250123T014557_braycurtis_sample_distances_C_sqrt.dist"))
+div_unifrac$eventID=sub("_.*","",div_unifrac$V1)
+div_unifrac$eventID=sub("RRAP-","Aspat_",div_unifrac$eventID)
+div_unifrac=div_unifrac %>% merge(meta_colony %>% dplyr::select(wgsID_short,eventID,locationID),by="eventID",all.y=F)
+colnames(div_unifrac)[4:75]=div_unifrac$eventID
+
+unifrac_dist=div_unifrac %>%
+  select(all_of(unique(names(div_unifrac)))) %>% distinct(wgsID_short,.keep_all = T)
+rownames(unifrac_dist)=unifrac_dist$wgsID_short
+unifrac_dist=unifrac_dist[,4:39]
+
+#ITS2 DIVs
+symportal_its2=read.table(paste0(path,"symbionts/Symportal_results_coral_ITS2/post_med_seqs/547_20250122T095002_DBV_20250123T014557.seqs.relative.abund_and_meta.txt"),header=T,check.names=F,sep="\t")
+
+#ITS2 profiles 
+symportal_profiles=read.table(paste0(path,"symbionts/Symportal_results_coral_ITS2/its2_type_profiles/547_20250122T095002_DBV_20250123T014557.profiles.relative.abund_and_meta.txt"),header=T,check.names=F,sep="\t",skip=2)
+```
+
+#Load D2S-derived distance based on hologenome samples k-mer profiles 
+```{r}
+kmer_mat=as.matrix(read.table(paste0(path,"/Symbiont_structure_data/","D2s_50M_dist_matrix_aspat_clean.txt"),check.names = F))
+
+kmer_mat=as.matrix(read.table(paste0(path,"symbionts/D2s_50M_dist_matrix_all_samples_clean.txt"),check.names = F))
+
+#Remove samples with insufficient number of symbiont reads 
+Nreads=read.table(paste0(path,"/Symbiont_structure_data/","Mapped_symbiont_read_counts_fasta.txt"),col.names=c("sample","Nreads")) %>% mutate(wgsID_short=sub("_.*","",sub(".*Aspat-","",basename(sample))))
+Correct_samples=Nreads %>% subset(wgsID_short %in% rownames(kmer_mat) & Nreads>340000)
+
+
+kmer_mat_sub=kmer_mat[rownames(kmer_mat) %in% Correct_samples$wgsID_short,colnames(kmer_mat) %in% Correct_samples$wgsID_short]
+
+#Perform principal coordinate analysis on the D2S-derived distance matrix
+pcoa <- cmdscale(as.dist(kmer_mat_sub), eig = TRUE, k = K)  # k is the number of dimensions
+pcoa_scores <- data.frame(pcoa$points)
+colnames(pcoa_scores)=paste0("PCo",seq(1,10))
+pcoa_scores$wgsID_short=rownames(pcoa_scores)
+```
+
+#Load ITS2 graftM data 
+```{r}
+graftM_its2=read.table(paste0(path,"symbionts/ITS2_abundance_aspat_clean.txt"),header=T)
+```
+
+
+#Perform hiearchical clustering on both distance matrices 
+```{r}
+#Filter both datasets to retain only samples found in common between the two 
+pcoa_scores_sub=pcoa_scores %>% subset(wgsID_short %in% symportal_its2$wgsID_short)
+
+unifrac_dist_sub=unifrac_dist[rownames(unifrac_dist) %in% pcoa_scores_sub$wgsID_short,rownames(unifrac_dist) %in% pcoa_scores_sub$wgsID_short]
+
+hc1 = hclust(as.dist(unifrac_dist_sub),method="complete")
+
+pcoa_mat_sub=pcoa_scores_sub[,2:3]
+rownames(pcoa_mat_sub)=pcoa_scores_sub$wgsID_short
+pcoa_mat_sub=pcoa_mat_sub[rownames(pcoa_mat_sub) %in% labels(hc1),]
+hc2 = hclust(dist(pcoa_mat_sub))
+```
+
+#Build the tanglegram
+```{r}
+dend1 <- as.dendrogram(hc1) %>%
+  set("labels_cex", 4) 
+
+sym=symportal_its2 %>% gather(A3:`21594_C`,key="ITS2",value="Rel_abund")
+dominant_ITS2=data.frame()
+for(s in unique(sym$wgsID_short)){
+  topITS2=sym$ITS2[sym$Rel_abund==max(sym$Rel_abund[sym$wgsID_short==s])]
+  dominant_ITS2=rbind(dominant_ITS2,data.frame(wgsID_short=s,Dominant_ITS2=topITS2))
+}
+
+dom <- dominant_ITS2$Dominant_ITS2[ match(labels(hc1), dominant_ITS2$wgsID_short) ]
+
+DIV_colors_sub=c("C3bo"="#BF6E1B", "C3k" ="#6e350f", "C50c"="#e76f51" ,"C50b"="#4ec49b")
+
+dend12=dend1  %>%
+  set("labels_col", DIV_colors_sub[as.factor(unlist(lapply(labels(dend1), 
+                                                      function(x) { dominant_ITS2[dominant_ITS2$wgsID_short == x, "Dominant_ITS2"] })))])
+
+dend12 <- dend1 %>%
+  set("labels_col", DIV_colors_sub[ dom ])
+
+
+
+dend2<- as.dendrogram(hc2) %>%
+  set("labels_cex",4)
+
+dendCombined <- dendlist(dend12, dend2)
+
+
+png(height=465, width=1000, file=paste0(figpath,"ITS2_Unifrac_kmer_tanglegram_V4.png"), res=300, units='mm')
+dendCombined2<-dendCombined %>%
+  untangle(method = "step2side") %>%
+  tanglegram(common_subtrees_color_lines = F,
+             highlight_distinct_edges = F,
+             highlight_branches_lwd = F,
+             common_subtrees_color_lines_default_single_leaf_color = "black",
+             lwd = 2,
+             sort = F,add_points=T,columns_width=c(6,2,6),edge.lwd=4,left_dendo_mar=c(2.1,5,2.1,20),right_dendo_mar=c(2.1,20,2.1,5))
+dev.off()
+```
+
+#Barplot of ITS2 sequence abundance (GraftM = hologenome vs Symportal = amplicon sequencing)
+
+#Prepare datafrarames
+```{r}
+#Count how many samples had ITS2 reads in this data
+graftM_its2_count <- graftM_its2 %>%
+  mutate(Total = rowSums(across(A1:Symbiodiniaceae_sp), na.rm = TRUE))
+sum(graftM_its2_count$Total>0)
+
+symportal_its2$eventID=sub("_.*","",symportal_its2$sample_name)
+symportal_its2$eventID=sub("RRAP-","Aspat_",symportal_its2$eventID)
+symportal_its2=symportal_its2[1:72,]
+symportal_its2=symportal_its2  %>% merge(meta_colony %>% dplyr::select(wgsID_short,eventID,locationID,Geographic_cluster),by="eventID",all.y=F) %>% distinct(wgsID_short,.keep_all = T)
+
+#Format dataframe for ITS2 profiles
+symportal_profiles=symportal_profiles[,-c(1)]
+colnames(symportal_profiles)=symportal_profiles[4,]
+colnames(symportal_profiles)[1]="sample_name"
+symportal_profiles=symportal_profiles[-c(1,2,3,4),]
+
+symportal_profiles$eventID=sub("_.*","",symportal_profiles$sample_name)
+symportal_profiles$eventID=sub("RRAP-","Aspat_",symportal_profiles$eventID)
+symportal_profiles=symportal_profiles  %>% merge(meta_colony %>% dplyr::select(wgsID_short,eventID,locationID,Geographic_cluster),by="eventID",all.y=F)  %>% distinct(wgsID_short,.keep_all = T)
+
+symportal_profiles=symportal_profiles %>%
+  mutate(across(`C3k-C50a-C3-C3cz-C3ba-C50q-C50f`:`C3k/C3bo-C50a-C3`, ~ ifelse(. != 0, 1, 0))) %>% gather(`C3k-C50a-C3-C3cz-C3ba-C50q-C50f`:`C3k/C3bo-C50a-C3`,key="ITS2",value="Abund") %>% mutate(ITS2=sub("\\..*","",ITS2))
+
+#Format dataframe for GraftM ITS2
+low_abund_ITS2=names(graftM_its2[2:22])[colSums(graftM_its2[,2:22])<5]
+graftM_its2=graftM_its2 %>% dplyr::select(-low_abund_ITS2)
+
+#Convert to wide format the abundance tables 
+graftM_its2=graftM_its2 %>% mutate(Total_reads=rowSums(across(where(is.numeric)))) %>% subset(Total_reads>0)
+graftM_its2[,2:9]=graftM_its2[,2:9]/graftM_its2$Total_reads
+graftM_its2 =graftM_its2 %>% tidyr::gather(C1:Cladocopium_sp,key="ITS2",value="Rel_abund")
+
+graftM_its2=graftM_its2%>% merge(meta_colony %>% dplyr::select(wgsID_short,locationID,Geographic_cluster),by="wgsID_short",all.y=F)
+```
+
+#Symportal ITS2 sequence plot 
+```{r}
+#Select top 20 variants for plotting purposes, group everyting under the same name
+variant_abund_top20=symportal_its2 %>% gather(A3:`21594_C`,key="ITS2",value="Rel_abund") %>% group_by(ITS2) %>% dplyr::summarise(Abund=sum(Rel_abund)) %>% arrange(desc(Abund)) %>% slice_head(n=20)
+
+DIV_colors=c("#A9E4EF",colorRampPalette(c("#FFD700", "#F4A261"))(11),colorRampPalette(c("#B9E6D8", "#8FD0BE", "#6CAB72"))(8),"grey")
+
+names(DIV_colors)=sort(c(variant_abund_top20$ITS2, "Other"))
+
+#Change DIV colors in color palette to match used in figures
+DIV_colors[names(DIV_colors)=="C3k"]="#6e350f"
+DIV_colors[names(DIV_colors)=="C3bo"]="#BF6E1B"
+DIV_colors[names(DIV_colors)=="C50c"]="#e76f51"
+DIV_colors[names(DIV_colors)=="C50b"]="#4ec49b"
+
+top5=variant_abund_top20[1:6,]
+
+bold_vector=names(DIV_colors)
+for(i in 1:length(bold_vector)){ 
+    bold_vector[i]<-if_else(bold_vector[i]  %in% top5$ITS2,paste('**',bold_vector[i] ,'**',sep=''),bold_vector[i]) 
+}  
+
+symportal_its2$Geographic_cluster=factor(symportal_its2$Geographic_cluster,levels=c("CB","Central/North GBR","South GBR","NC"))
+
+symportal_plot=symportal_its2 %>% gather(A3:`21594_C`,key="ITS2",value="Rel_abund") %>% mutate(ITS2=if_else(ITS2 %in% variant_abund_top20$ITS2,ITS2,"Other")) %>% ggplot( aes(x=wgsID_short, Rel_abund)) + geom_col(aes(fill=ITS2),width=0.8)+ theme_tree2() + theme(legend.position='left',axis.text.x=element_blank(),legend.text =ggtext::element_markdown(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=10,r=10),legend.margin = margin(t=10,b=10,l=0,r=0),strip.text = element_text(size=20))+ labs(fill="Symportal ITS2 variant") + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1))+ facet_grid(~Geographic_cluster,scales="free_x", space = "free_x",labeller=as_labeller(c("CB"="CB","Central/North GBR"="GBR C/N","South GBR"="S","NC"="NC"))) + scale_fill_manual(values=DIV_colors,labels=bold_vector)
+```
+
+#Symportal profile plot 
+```{r}
+symportal_profiles$Geographic_cluster=factor(symportal_profiles$Geographic_cluster,levels=c("CB","Central/North GBR","South GBR","NC"))
+
+symportal_profile_plot=symportal_profiles %>% ggplot( aes(x=wgsID_short, Abund)) + geom_col(aes(fill=ITS2),width=0.8)+ theme_tree2() + theme(legend.position='left',axis.text.x=element_blank(),legend.text =ggtext::element_markdown(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=10,r=10),legend.margin = margin(t=10,b=10,l=0,r=0),strip.text = element_text(size=20))+ labs(fill=name) + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1))+ facet_grid(~Geographic_cluster,scales="free_x", space = "free_x",labeller=as_labeller(c("CB"="CB","Central/North GBR"="GBR C/N","South GBR"="S","NC"="NC"))) + labs(fill="Symportal ITS2 profile")
+```
+
+
+#GraftM ITS2 plot 
+```{r}
+full_wgsID_list <- unique(symportal_its2$wgsID_short)
+graftM_its2 <- graftM_its2 %>%
+  filter(wgsID_short %in% full_wgsID_list) %>% merge(symportal_its2 %>% dplyr::select(wgsID_short,Geographic_cluster),all.y=T) %>% mutate(Rel_abund=if_else(is.na(Rel_abund),0,Rel_abund))
+
+#Top 3 ITS2 sequences across the whole dataset
+top3=graftM_its2 %>% group_by(ITS2) %>% dplyr::summarise(A=sum(Rel_abund)) %>% arrange(desc(A)) %>% slice_head(n=3)
+
+
+ITS2_colors<-c("grey","#A9E4EF","#CC79A7","#62BAAC","#4B8077","#CC791E","#009E73","#E2655C")
+names(ITS2_colors)<-sort(unique(graftM_its2$ITS2))
+
+bold_vector=names(ITS2_colors)
+for(i in 1:length(bold_vector)){ 
+    bold_vector[i]<-if_else(bold_vector[i]  %in% top3$ITS2,paste('**',bold_vector[i] ,'**',sep=''),bold_vector[i]) 
+}  
+
+#Put genra names in italics 
+bold_vector[bold_vector=="**Cladocopium_sp**"]="***Cladocopium sp.***"
+
+graftM_its2$Geographic_cluster=factor(graftM_its2$Geographic_cluster,levels=c("CB","Central/North GBR","South GBR","NC"))
+
+ITS2_barplot <- graftM_its2 %>% ggplot( aes(x=wgsID_short, Rel_abund)) + geom_col(aes(fill=ITS2))+ theme_tree2() + theme(legend.position='left',axis.text.x=element_text(size=25,color="black",angle=45,hjust=0.95),legend.text =ggtext::element_markdown(size=30,color="black"),legend.title = element_text(size=35,color="black"),plot.margin=margin(t=0,b=0,l=10,r=10),legend.margin = margin(t=10,b=10,l=0,r=0),strip.text = element_text(size=20))+ scale_fill_manual(values = ITS2_colors,labels=bold_vector) + labs(fill="GraftM ITS2 variant") + scale_y_continuous(expand=c(0,0),breaks=c(0,0.5,1)) + facet_wrap(~Genomic.Cluster,nrow=1)+ facet_grid(~Geographic_cluster,scales="free_x", space = "free_x",labeller=as_labeller(c("CB"="CB","Central/North GBR"="GBR C/N","South GBR"="S","NC"="NC")))
+```
+
+
+#Plot the two side by side 
+```{r}
+library(patchwork)
+combine_plot =symportal_plot / symportal_profile_plot / ITS2_barplot + plot_layout(heights = c(1, 0.7,0.8))
+
+combine_plot =symportal_plot / symportal_profile_plot / ITS2_barplot + plot_layout(heights = c(0.7, 1.2,0.5))
+ggsave(combine_plot,filename=paste0(figpath,"Test_ITS2_Comparison_GraftM_Symportal_wprofile.png"),width=25,height=18,dpi=500)
+```
+
+
+```
+

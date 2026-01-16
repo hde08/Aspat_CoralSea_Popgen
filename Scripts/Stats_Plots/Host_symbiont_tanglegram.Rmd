@@ -35,6 +35,10 @@ hc2_dendro <- as.dendrogram(hc2_pv$hclust)
 #Read symbionts ITS2 annotation
 symb_clusters=read.table(paste0(path,"D2s_50M_dist_matrix_aspat_clean_cluster_metadata_outliers_1.5IQR_per_region.txt"),check.names=F,sep="\t",header=T)
 
+#Assign different cluster names to C50b NC and S GBR as they were genetically differentiated based on PCoA and NJ-tree results
+symb_clusters$ITS2[symb_clusters$ITS2=="C50b" & symb_clusters$Genomic.cluster=="GBR_South"]="C50b_SGBR"
+symb_clusters$ITS2[symb_clusters$ITS2=="C50b" & symb_clusters$Genomic.cluster=="NC"]="C50b_NC"
+
 
 #Load RAxML tree of host lineages
 rerooted_bootstrap_file<-paste0(path, "RAxML_bipartitions.aspat_clean_all_chr_SNP_filtered_2_20mis_noclones_recoded_MAF0.05_LD0.2_subsample70_final_tree_GAMMA_rerooted_pruned.nwk")
@@ -65,7 +69,9 @@ dend1 <- rerooted_bootstrap_tree %>%
 
 
 cluster_colors=c("#6E3610","#D38B46","#4EC49B","#00724E")
-names(cluster_colors)=c("C3k","C3k/C3bo","C50b","C50c")
+
+cluster_colors=c("#6e350f","#D38B46","#4ec49b","#7683fe","#e76f51")
+names(cluster_colors)=c("C3k","C3k/C3bo","C50b_SGBR","C50b_NC","C50c")
 
 dend2<- hc2_dendro_pruned %>%
   dendextend::set("labels_cex",2)%>%color_branches(col = cluster_colors[unlist(lapply(labels(hc2_dendro_pruned), 
@@ -80,7 +86,7 @@ dend2=raise.dendrogram(dend2, 0.5)
 dendCombined <- dendlist(dend1, dend2)
 
 
-png(height=465, width=700, file=paste0(figpath,"Host_RAxML_symbionts_kmer_tanglegram_unanotated.png"), res=300, units='mm')
+png(height=465, width=700, file=paste0(figpath,"Host_RAxML_symbionts_kmer_tanglegram_unanotated_v2.png"), res=300, units='mm')
 dendCombined2<-dendCombined %>%
   untangle(method = "step2side") %>%
   tanglegram(common_subtrees_color_lines = F,

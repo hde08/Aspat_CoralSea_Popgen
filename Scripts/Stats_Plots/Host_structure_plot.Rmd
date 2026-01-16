@@ -49,6 +49,11 @@ world=rnaturalearth::ne_countries(returnclass = "sf")["geometry"]
 #Load metadata
 ```{r}
 meta_colony=read.table(paste0(path,"Colony_metadata_Aspat_GBR_NC.txt"),header=T,sep="\t")
+
+meta_site=openxlsx::read.xlsx(paste0(path,"Summary_PhD_sites.xlsx"),sheet = "Sheet 1")
+
+pop=read.table(paste0(path,"aspat_clean_filtered2_Group1234_noclones.filelist.txt"),col.names=c("sample","Group"))
+pop$wgsID_short=sub(".*Aspat-","",sub("_.*","",pop$sample))
 ```
 
 
@@ -58,6 +63,7 @@ meta_colony=read.table(paste0(path,"Colony_metadata_Aspat_GBR_NC.txt"),header=T,
 MISS="20"
 #Specify minor allele frequency filtering for plotting
 m="0.05"
+M="20"
 #Specify number of ADMIXTURE ancestral populations for plotting
 K_optimal="K=4"
 
@@ -78,12 +84,15 @@ cov.scores=as.data.frame(cov$scores)
 cov.scores$ID=rownames(cov.scores)
 cov.scores$wgsID_short=sub("_.*","",sub(".*Aspat-","",cov.scores$ID))
 cov.scores=cov.scores %>% merge(meta_colony %>% merge(meta_site %>% dplyr::select(Site.name,Genomic.Cluster),by.x="locationID",by.y="Site.name"),by="wgsID_short")
+
+cov.scores=cov.scores %>% merge(meta_colony %>% dplyr::select(Geographic_cluster,wgsID_short),by="wgsID_short")
   
 #Remove outlier samples
 cov.scores=cov.scores %>% subset(!wgsID_short %in% c("NC4-5","NC8-12","CB6-20","CB3-10","CB1-4","CBHE-1748"))
 
-#Load Demographic modeling results 
-migration_rate=read.table(paste0(path,"Bootstrap_parameters_allpairs.txt"),header=T) 
+
+
+
 ```
 
 #Make PCA plots 
@@ -150,7 +159,7 @@ site_map=basemap(limits = c(144,169, -26,-13),
     location = "tr",
     bar_cols = c("#092347", "white"),
     text_family = "ArcherPro Book",line_width = 1.5,text_cex=2,pad_y = unit(0.4, "in")
-  ) + ggspatial::annotation_north_arrow(location = "tr", which_north = "true", pad_x = unit(0.4, "in"), pad_y = unit(0.65, "in"),height=unit(2,"cm"),width=unit(2,"cm"), style = north_arrow_fancy_orienteering(fill = c("#092347", "white"),text_size=20)) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")+ geom_point(data=site_coordinates,aes(x=Lon,y=Lat),size=3,shape=21, color="#092347",fill="#092347") + guides(fill="none",color="none")
+  ) + ggspatial::annotation_north_arrow(location = "tr", which_north = "true", pad_x = unit(0.4, "in"), pad_y = unit(0.65, "in"),height=unit(2,"cm"),width=unit(2,"cm"), style = north_arrow_fancy_orienteering(fill = c("#092347", "white"),text_size=20)) + coord_sf(xlim=c(144,169),ylim=c(-26,-13),expand=F,crs="+proj=longlat +datum=WGS84 +no_defs")+ geom_point(data=site_coordinates,aes(x=Lon,y=Lat),size=3,shape=21, color="#092347",fill="#092347") + guides(fill="none",color="none") + theme(panel.grid = element_blank())
 
 #Add ADMIXTURE results to the map 
 #Adjust sites positions for better visualization 
@@ -169,62 +178,121 @@ site_map_pie=site_map + geom_segment(data=admix_df_site,aes(x=Lon,xend=Lon.adj,y
 #Add arrows with migration rates on the map 
 arrow_coordinates=data.frame(Pop=c("Group1-Group2","Group1-Group3","Group1-Group4","Group2-Group3","Group2-Group4","Group3-Group4"),x=c(149,148,150,155,154.6,163),y=c(-20.5,-16,-18,-24,-23,-21),xend=c(151.5,164,156,164,157,159),yend=c(-23.2,-19.5,-19,-23.5,-20.5,-20.5))
 
-migration_rate=migration_rate %>% subset(Real_parameter %in% c("m12","m21")) %>% merge(arrow_coordinates,by.x="Pop_short",by.y="Pop") %>% cbind(curvature=c(0.3,0.5,-0.2,0.4,0.5,0.4,0.2,-0.4,-0.3,-0.3,-0.2,-0.2),arrow_dir=rep(c("forward", "backward"), length.out = 12),linetype=c("solid","dashed","dashed","solid","dashed","solid","dashed","solid","solid","dashed","solid","dashed")) 
+#Load Demographic modeling results 
+migration_rate=read.table(paste0(path,"Bootstrap_parameters_allpairs_long.txt"),header=T) 
+
+migration_rate$Pop_short=sub("_20mis","",migration_rate$Pop)
+migration_rate=migration_rate %>% subset(Real_parameter %in% c("M12","M21")) %>% merge(arrow_coordinates,by.x="Pop_short",by.y="Pop") %>% cbind(curvature=c(0.3,0.5,0.2,-0.3,0.5,0.4,-0.2,0.4,-0.3,-0.3,0.2,0.2),arrow_dir=c("backward","forward","backward","forward","backward","forward","backward","forward","backward","forward","backward","forward"),linetype=c("dashed","solid","dashed","solid","solid","solid","dashed","solid","solid","solid","solid","dashed"),arrowsize=c(0.01,0.03,0.01,0.03,0.03,0.03,0.01,0.03,0.03,0.03,0.03,0.01)) 
+
 
 site_map_pie_arrow=site_map_pie
 
+#site_map_pie_arrow=ggplot()
+
 #Add dadi migration rates on top of map
 #Adjust exponent for lines contrast 
-exponent=4
-
+coeff=0.3
 for (i in seq_len(nrow(migration_rate))){
   row <- migration_rate[i, ]
   curv=migration_rate$curvature[i]
   linetype=migration_rate$linetype[i]
+  arrowsize=migration_rate$arrowsize[i]
   
   print(curv)
   
   if (row$arrow_dir == "forward") {
-    site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=(log(row$median*10^10)/10)^exponent,
+    site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=row$median*coeff,
       x = row$x, y = row$y,
       xend = row$xend, yend = row$yend,
       curvature = curv,
       linetype=linetype,
-      arrow = arrow(length = unit(0.03, "npc")),
+      arrow = arrow(length = unit(arrowsize, "npc"),type="closed"),
       color = "#092347"
     )
   } else if (row$arrow_dir == "backward") {
-    site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=(log(row$median*10^10)/10)^exponent,
+    site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=row$median*coeff,
       x = row$xend, y = row$yend,
       xend = row$x, yend = row$y,
       curvature = curv,
       linetype=linetype,
-      arrow = arrow(length = unit(0.03, "npc")),
+      arrow = arrow(length = unit(arrowsize, "npc"),type="closed"),
       color = "#092347"
     )
   }
 }
 
+# 
+# exponent=4
+# 
+# for (i in seq_len(nrow(migration_rate))){
+#   row <- migration_rate[i, ]
+#   curv=migration_rate$curvature[i]
+#   linetype=migration_rate$linetype[i]
+#   
+#   print(curv)
+#   
+#   if (row$arrow_dir == "forward") {
+#     site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=(log(row$median*10^10)/10)^exponent,
+#       x = row$x, y = row$y,
+#       xend = row$xend, yend = row$yend,
+#       curvature = curv,
+#       linetype=linetype,
+#       arrow = arrow(length = unit(0.03, "npc")),
+#       color = "#092347"
+#     )
+#   } else if (row$arrow_dir == "backward") {
+#     site_map_pie_arrow <- site_map_pie_arrow + annotate("curve",size=(log(row$median*10^10)/10)^exponent,
+#       x = row$xend, y = row$yend,
+#       xend = row$x, yend = row$y,
+#       curvature = curv,
+#       linetype=linetype,
+#       arrow = arrow(length = unit(0.03, "npc")),
+#       color = "#092347"
+#     )
+#   }
+# }
+
+# library(scales)
+# #Create dummmy legend 
+# dummy=ggplot(data=migration_rate) + geom_curve(aes(x=x,y=y,yend=yend,xend=xend,size=(log(median*10^10)/10)^exponent)) + 
+#   scale_size_continuous(
+#     range=c((log(min(migration_rate$median)*10^10)/10)^exponent,(log(max(migration_rate$median)*10^10)/10)^exponent),
+#     name = "",
+#     breaks=c(0.25,0.75,1.25),
+#     labels=c(formatC(exp(0.25*10)/10^10, format = "e", digits = 1),formatC(exp(0.75*10)/10^10, format = "e", digits = 1),formatC(exp(1.25*10)/10^10, format = "e", digits = 1)),
+#     guide = guide_legend(
+#       title.position = "top",       
+#       title.hjust = 0.5,            
+#       label.position = "right",    
+#       label.theme = element_text(size = 22,color="#092347"),  
+#       direction = "vertical",    
+#       override.aes = list(color = "#092347"))) + theme(legend.background = element_rect(fill = NA, color = NA),legend.key = element_rect(fill = NA))
+migration_rate$median_val=seq(1,15,length.out=12)
 library(scales)
 #Create dummmy legend 
-dummy=ggplot(data=migration_rate) + geom_curve(aes(x=x,y=y,yend=yend,xend=xend,size=(log(median*10^10)/10)^exponent)) + 
+dummy=ggplot(data=migration_rate) + geom_curve(aes(x=x,y=y,yend=yend,xend=xend,size=coeff*median_val)) +labs(size = "Gene flow") +
   scale_size_continuous(
-    range=c((log(min(migration_rate$median)*10^10)/10)^exponent,(log(max(migration_rate$median)*10^10)/10)^exponent),
-    name = "",
-    breaks=c(0.25,0.75,1.25),
-    labels=c(formatC(exp(0.25*10)/10^10, format = "e", digits = 1),formatC(exp(0.75*10)/10^10, format = "e", digits = 1),formatC(exp(1.25*10)/10^10, format = "e", digits = 1)),
+    range=c(0.3,4.5),
+    breaks=c(0.3,1.5,3,4.5),
+    labels=c("1 individual","5 individuals","10 individuals","15 individuals"),
     guide = guide_legend(
       title.position = "top",       
       title.hjust = 0.5,            
       label.position = "right",    
-      label.theme = element_text(size = 22,color="#092347"),  
+      label.theme = element_text(size = 18,color="#092347"),  
       direction = "vertical",    
-      override.aes = list(color = "#092347"))) + theme(legend.background = element_rect(fill = NA, color = NA),legend.key = element_rect(fill = NA))
+      override.aes = list(color = "#092347"))) + theme(legend.background = element_rect(fill = NA, color = NA),legend.key = element_rect(fill = NA)) + theme(legend.title = element_text(size = 22, color = "#092347"),legend.background = element_rect(
+      fill = "transparent",        # background color of the box
+      color = "#092347",       # border color
+      size = 1,              # border thickness
+      linetype = "solid"
+    ))
 
 size_legend=cowplot::get_legend(dummy)
 
-site_map_pie_arrow=site_map_pie_arrow + draw_plot(size_legend,x=164.5,y=-16.5,width=1,height=1)
+site_map_pie_arrow=site_map_pie_arrow + draw_plot(size_legend,x=164,y=-16.3,width=1,height=1)
 
+#ggsave(site_map_pie_arrow,filename=paste0(figpath,"Map_last_version.png"),width=22,height=10,dpi=500)
 ```
 
 #Combine all plots in one figure and save 
@@ -234,7 +302,7 @@ full_site_map<-site_map_pie_arrow+ annotation_custom(grob=world_map,xmin=145,xma
 #Aggregate plots 
 total_plot=cowplot::ggdraw() +draw_plot(full_site_map,x=0.325,y=0.03,width=0.65,height=0.7) +draw_plot(admix_plot,x=0.320,y=0.67,width=0.625,height=0.345) +draw_plot(pca12,x=0,y=0.5,width=0.3,height=0.495) +draw_plot(pca23,x=0,y=0.01,width=0.3,height=0.495)  + theme(plot.background = element_rect(fill="white"))+draw_plot_label(label=c("a","b","c"),x=c(0,0.32,0.32),y=c(1,1,0.7),size=35)+ theme(legend.key.width =unit(5,"cm"))
 
-ggsave(total_plot,filename=paste0(figpath,"Figure_1_v3.png"),width=22,height=10,dpi=500)
+ggsave(total_plot,filename=paste0(figpath,"Figure_1_v4.png"),width=22,height=10,dpi=500)
 
 ```
 
